@@ -140,6 +140,10 @@ async def delete_group(cb: CallbackQuery, state: FSMContext):
     )
 
 
+from sqlalchemy import delete
+from bot.scheduler import scheduler
+
+
 @router.message(DeleteGroup.waiting_for_confirm)
 async def confirm_delete_group(msg: Message, state: FSMContext):
     data = await state.get_data()
@@ -152,20 +156,26 @@ async def confirm_delete_group(msg: Message, state: FSMContext):
             await msg.answer("⚠️ Группа не найдена.")
             return
 
-        print(group_id, msg_group_id)
         if str(group_id) != msg_group_id:
             await msg.answer('⚠️ Код группы не совпадает с ID группы.')
             return
-        else:
-            # Удаляем группу из базы данных
-            await session.delete(group)
+
+        # 1. Удаляем связанные данные вручную
+        await session.execute(delete(UnblockedUserLimit).where(UnblockedUserLimit.group_id == group_id))
+        await session.execute(delete(ScheduledPost).where(ScheduledPost.group_id == group_id))
+
+        # 2. Удаляем саму группу
+        await session.delete(group)
 
         await session.commit()
 
+    # 3. Чистим scheduler от заданий этой группы
+    for job in scheduler.get_jobs():
+        if str(group_id) in job.id:
+            scheduler.remove_job(job.id)
+
     await state.clear()
-    await msg.answer(
-        f"Группа <code>{group_id}</code> успешно удалена."
-    )
+    await msg.answer(f"✅ Группа <code>{group_id}</code> и все связанные данные успешно удалены.")
 # ------------------------------------------------------------
 @router.callback_query(F.data.startswith("edit_limit_message_"))
 async def edit_limit_msg(cb: CallbackQuery, state: FSMContext):
