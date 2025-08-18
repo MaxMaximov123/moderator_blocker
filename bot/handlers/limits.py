@@ -16,6 +16,14 @@ async def limit_checker(msg: Message, bot: Bot):
     user_id = msg.from_user.id
     group_id = msg.chat.id
 
+    member = await bot.get_chat_member(group_id, user_id)
+    print(f"Checking limits for user {user_id} in group {group_id}, status: {member.status}")
+    if member.status in ("administrator", "creator"):
+        return  # Админы и владельцы не ограничиваются
+
+    if msg.content_type in {"new_chat_members", "left_chat_member", "pinned_message"}:
+        return
+
     if msg.content_type in {"new_chat_members", "left_chat_member", "pinned_message"}:
         return
 
