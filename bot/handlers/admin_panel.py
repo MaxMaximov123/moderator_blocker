@@ -9,7 +9,7 @@ from sqlalchemy import select
 from db.session import AsyncSession
 from db.models import Group, Admin, ScheduledPost
 from bot.keyboards.panel import groups_keyboard, group_panel_keyboard
-from bot.states import EditWelcome, IntervalMailingState, TimedMailingState, MailingMenuState, EditLimitMessage, EditLimit
+from bot.states import EditWelcome, IntervalMailingState, TimedMailingState, MailingMenuState, EditLimitMessage, EditLimit, DeleteGroup
 from bot.scheduler import add_post_to_schedule
 from aiogram import Bot
 import datetime
@@ -125,6 +125,46 @@ async def save_new_welcome_text(msg: Message, state: FSMContext):
     )
 
 
+
+
+
+
+@router.callback_query(F.data.startswith("delete_"))
+async def delete_group(cb: CallbackQuery, state: FSMContext):
+    group_id = int(cb.data.split("_")[-1])
+    await state.set_state(DeleteGroup.waiting_for_confirm)
+    await state.update_data(group_id=group_id)
+
+    await cb.message.edit_text(
+        f"Для подтверждения удаления отправьте код группы следующим сообщением <code>{group_id}</code>."
+    )
+
+
+@router.message(DeleteGroup.waiting_for_confirm)
+async def confirm_delete_group(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    msg_group_id = msg.text.strip()
+
+    async with AsyncSession() as session:
+        group = await session.get(Group, group_id)
+        if not group:
+            await msg.answer("⚠️ Группа не найдена.")
+            return
+        
+        if group_id != msg_group_id:
+            await msg.answer('⚠️ Код группы не совпадает с ID группы.')
+            return
+        else:
+            # Удаляем группу из базы данных
+            await session.delete(group)
+
+        await session.commit()
+
+    await state.clear()
+    await msg.answer(
+        f"Группа <code>{group_id}</code> успешно удалена."
+    )
 # ------------------------------------------------------------
 @router.callback_query(F.data.startswith("edit_limit_message_"))
 async def edit_limit_msg(cb: CallbackQuery, state: FSMContext):

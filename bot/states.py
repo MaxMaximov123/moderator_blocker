@@ -8,6 +8,10 @@ class EditWelcome(StatesGroup):
 class EditLimitMessage(StatesGroup):
     waiting_for_limit_text = State()
 
+
+class DeleteGroup(StatesGroup):
+    waiting_for_confirm = State()
+
 class EditLimit(StatesGroup):
     waiting_for_limit = State()
 
