@@ -144,7 +144,7 @@ async def delete_group(cb: CallbackQuery, state: FSMContext):
 async def confirm_delete_group(msg: Message, state: FSMContext):
     data = await state.get_data()
     group_id = data.get("group_id")
-    msg_group_id = int(msg.text.strip())
+    msg_group_id = msg.text.strip()
 
     async with AsyncSession() as session:
         group = await session.get(Group, group_id)
@@ -153,7 +153,7 @@ async def confirm_delete_group(msg: Message, state: FSMContext):
             return
 
         print(group_id, msg_group_id)
-        if group_id != msg_group_id:
+        if str(group_id) != msg_group_id:
             await msg.answer('⚠️ Код группы не совпадает с ID группы.')
             return
         else:
