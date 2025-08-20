@@ -135,9 +135,21 @@ async def delete_group(cb: CallbackQuery, state: FSMContext):
     await state.set_state(DeleteGroup.waiting_for_confirm)
     await state.update_data(group_id=group_id)
 
-    await cb.message.edit_text(
-        f"Для подтверждения удаления отправьте код группы следующим сообщением <code>{group_id}</code>."
+    text = (
+        f"Для подтверждения удаления отправьте код группы следующим сообщением "
+        f"<code>{group_id}</code>."
     )
+
+    try:
+        if cb.message.text:
+            await cb.message.edit_text(text)
+        elif cb.message.caption:
+            await cb.message.edit_caption(text)
+        else:
+            await cb.message.answer(text)
+    except Exception as e:
+        # fallback если что-то пойдёт не так
+        await cb.message.answer(text)
 
 
 from sqlalchemy import delete
