@@ -32,5 +32,5 @@ def group_panel_keyboard(group_id):
         [InlineKeyboardButton(text="💬 Превышение лимита", callback_data=f"edit_limit_message_{group_id}")],
         [InlineKeyboardButton(text="📤 Настройки рассылки", callback_data=f"mailing_menu_{group_id}")],
         [InlineKeyboardButton(text="📅 Запланированные посты", callback_data=f"planned_posts_{group_id}")],
-        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_{group_id}")]
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_group_{group_id}")]
     ])

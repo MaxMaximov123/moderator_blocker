@@ -129,7 +129,7 @@ async def save_new_welcome_text(msg: Message, state: FSMContext):
 
 
 
-@router.callback_query(F.data.startswith("delete_"))
+@router.callback_query(F.data.startswith("delete_group_"))
 async def delete_group(cb: CallbackQuery, state: FSMContext):
     group_id = int(cb.data.split("_")[-1])
     await state.set_state(DeleteGroup.waiting_for_confirm)
