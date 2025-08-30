@@ -866,20 +866,33 @@ async def add_scheduled_post(data, bot: Bot):
         await session.commit()
 
 async def add_timed_post(data, bot: Bot):
+    messages = data["messages"]  # теперь это список Message
+    serialized = []
+    for msg in messages:
+        item = {
+            "type": msg.content_type,
+            "caption": getattr(msg, "caption", None),
+        }
+        if msg.content_type == "photo":
+            item["file_id"] = msg.photo[-1].file_id
+        elif msg.content_type in ["video", "document", "audio", "animation", "voice", "sticker"]:
+            item["file_id"] = getattr(msg, msg.content_type).file_id
+        elif msg.content_type == "text":
+            item["text"] = msg.html_text
+        serialized.append(item)
+
     async with AsyncSession() as session:
         post = ScheduledPost(
             group_id=data["group_id"],
             type="datetime",
-            content=data["message"],
+            content=json.dumps(serialized),  # сохраняем как JSON
             scheduled_datetime=data["scheduled_datetime"],
             pin=data.get("pin", False),
             unpin_after_minutes=data.get("unpin_after", None),
             delete_type=data["delete_type"],
             delete_after_minutes=data["delete_delay"],
-            media_file_id=data["media_file_id"]
         )
         session.add(post)
         await session.flush()
-
         await add_post_to_schedule(bot, post)
         await session.commit()
