@@ -337,19 +337,23 @@ async def interval_get_message(msg: Message, state: FSMContext):
         album.append(msg)
         await state.update_data(album=album)
 
-        # Ждем остальные сообщения альбома (aiogram присылает их подряд)
-        await asyncio.sleep(1.5)
-        album = (await state.get_data()).get("album", [])
-        if len(album) > 1:
-            await state.update_data(messages=album)
-            await state.set_state(IntervalMailingState.waiting_for_interval)
-            await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+        # Проверяем, не было ли уже отправлено приглашение ввести интервал
+        if not data.get("album_processing"):
+            await state.update_data(album_processing=True)
+            # Ждем остальные сообщения альбома
+            await asyncio.sleep(1.5)
+            album = (await state.get_data()).get("album", [])
+            if len(album) > 1:
+                await state.update_data(messages=album)
+                await state.set_state(IntervalMailingState.waiting_for_interval)
+                await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+            await state.update_data(album_processing=False)
         return
 
     # Одиночное сообщение
     await state.update_data(messages=[msg])
     await state.set_state(IntervalMailingState.waiting_for_interval)
-    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30,
 
 @router.message(IntervalMailingState.waiting_for_interval)
 async def interval_get_interval(msg: Message, state: FSMContext):
@@ -501,27 +505,31 @@ async def timed_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(TimedMailingState.waiting_for_message)
 async def timed_get_message(msg: Message, state: FSMContext):
-    content_type = msg.content_type
-    file_id = None
-    caption = None
+    data = await state.get_data()
+    media_group_id = msg.media_group_id
 
-    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        file_id = getattr(msg, content_type).file_id if content_type != "photo" else msg.photo[-1].file_id
-        caption = msg.html_text if hasattr(msg, "caption") else ""
-    elif content_type == "text":
-        caption = msg.html_text
-    else:
-        await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
+    if media_group_id:
+        album = data.get("album", [])
+        album.append(msg)
+        await state.update_data(album=album)
+
+        # Проверяем, не было ли уже отправлено приглашение ввести дату
+        if not data.get("album_processing"):
+            await state.update_data(album_processing=True)
+            # Ждем остальные сообщения альбома
+            await asyncio.sleep(1.5)
+            album = (await state.get_data()).get("album", [])
+            if len(album) > 1:
+                await state.update_data(messages=album)
+                await state.set_state(TimedMailingState.waiting_for_date)
+                await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
+            await state.update_data(album_processing=False)
         return
 
-    await state.update_data(
-        media_file_id=f"{content_type.value}+++{file_id}",
-        message=caption,
-    )
-
+    # Одиночное сообщение
+    await state.update_data(messages=[msg])
     await state.set_state(TimedMailingState.waiting_for_date)
     await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
-
 
 @router.message(TimedMailingState.waiting_for_date)
 async def timed_get_date(msg: Message, state: FSMContext):
@@ -651,6 +659,9 @@ async def timed_get_delete_delay(msg: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("planned_posts_"))
 async def planned_posts_list(cb: CallbackQuery, bot: Bot):
+    import json
+    from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
+
     group_id = int(cb.data.split("_")[-1])
     await cb.message.delete()
 
@@ -693,7 +704,66 @@ async def planned_posts_list(cb: CallbackQuery, bot: Bot):
 
         params_text = "\n".join(details)
 
+        # --- Новый универсальный вывод контента ---
         try:
+            # Новый формат: content как JSON (альбом или одиночное)
+            messages = None
+            try:
+                messages = json.loads(post.content)
+            except Exception:
+                pass
+
+            if messages and isinstance(messages, list):
+                if len(messages) > 1:
+                    # Альбом
+                    media = []
+                    for item in messages:
+                        if item["type"] == "photo":
+                            media.append(InputMediaPhoto(media=item["file_id"], caption=item.get("caption")))
+                        elif item["type"] == "video":
+                            media.append(InputMediaVideo(media=item["file_id"], caption=item.get("caption")))
+                        elif item["type"] == "document":
+                            media.append(InputMediaDocument(media=item["file_id"], caption=item.get("caption")))
+                        # Можно добавить другие типы при необходимости
+                    sent_msgs = await bot.send_media_group(chat_id=cb.from_user.id, media=media)
+                    # Отправляем параметры отдельным сообщением
+                    await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                elif len(messages) == 1:
+                    # Одиночное сообщение
+                    item = messages[0]
+                    if item["type"] == "text":
+                        await bot.send_message(
+                            chat_id=cb.from_user.id,
+                            text=f"{item['text']}\n\n{params_text}",
+                            reply_markup=kb
+                        )
+                    elif item["type"] == "photo":
+                        await bot.send_photo(
+                            chat_id=cb.from_user.id,
+                            photo=item["file_id"],
+                            caption=f"{item.get('caption') or ''}\n\n{params_text}",
+                            reply_markup=kb
+                        )
+                    elif item["type"] == "video":
+                        await bot.send_video(
+                            chat_id=cb.from_user.id,
+                            video=item["file_id"],
+                            caption=f"{item.get('caption') or ''}\n\n{params_text}",
+                            reply_markup=kb
+                        )
+                    elif item["type"] == "document":
+                        await bot.send_document(
+                            chat_id=cb.from_user.id,
+                            document=item["file_id"],
+                            caption=f"{item.get('caption') or ''}\n\n{params_text}",
+                            reply_markup=kb
+                        )
+                    # ... другие типы при необходимости
+                    else:
+                        await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ❓ Неизвестный тип контента", reply_markup=kb)
+                continue  # Уже отправили, пропускаем старый формат
+
+            # Старый формат (media_file_id)
             ct = "text"
             media_id = ""
             if post.media_file_id and "+++" in post.media_file_id:
@@ -726,8 +796,8 @@ async def planned_posts_list(cb: CallbackQuery, bot: Bot):
 
         except Exception as e:
             print(f"[!] Ошибка отображения запланированного поста {post.id}: {e}")
-            await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ⚠️ Ошибка отображения", reply_markup=kb)
-
+            await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ⚠️ Ошибка отображения",
+                                      reply_markup=kb)
 @router.callback_query(F.data.startswith("delete_post_"))
 async def delete_post_handler(cb: CallbackQuery, bot: Bot):
     post_id = int(cb.data.split("_")[-1])
