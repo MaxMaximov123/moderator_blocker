@@ -33,9 +33,11 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             return
 
         sent = None
+        message_id = None
         try:
             # Попытка загрузить как альбом (список сообщений)
             try:
+                import json
                 messages = json.loads(post.content)
             except Exception:
                 messages = None
@@ -50,11 +52,12 @@ async def send_scheduled_message(bot: Bot, post_id: int):
                         media.append(InputMediaVideo(media=item["file_id"], caption=item.get("caption")))
                     elif item["type"] == "document":
                         media.append(InputMediaDocument(media=item["file_id"], caption=item.get("caption")))
-                    # Добавьте другие типы при необходимости
                 sent_msgs = await bot.send_media_group(chat_id=post.group_id, media=media)
-                message_id = sent_msgs[0].message_id  # Для pin/unpin/delete используем первый
+                # Для pin/unpin/delete используем первый message_id
+                if sent_msgs and len(sent_msgs) > 0:
+                    message_id = sent_msgs[0].message_id
             elif messages and isinstance(messages, list) and len(messages) == 1:
-                # Одиночное сообщение (универсально)
+                # Одиночное сообщение
                 item = messages[0]
                 if item["type"] == "text":
                     sent = await bot.send_message(chat_id=post.group_id, text=item["text"])
@@ -65,7 +68,8 @@ async def send_scheduled_message(bot: Bot, post_id: int):
                 elif item["type"] == "document":
                     sent = await bot.send_document(chat_id=post.group_id, document=item["file_id"], caption=item.get("caption"))
                 # ... другие типы
-                message_id = sent.message_id
+                if sent:
+                    message_id = sent.message_id
             else:
                 # Старый формат (одиночное сообщение)
                 ct, media_file_id = post.media_file_id.split('+++')
@@ -88,17 +92,16 @@ async def send_scheduled_message(bot: Bot, post_id: int):
                 else:
                     print(f"[!] Неизвестный content_type: {ct}")
                     return
-                message_id = sent.message_id
+                if sent:
+                    message_id = sent.message_id
         except Exception as e:
             print(f"[!] Ошибка отправки поста {post_id}: {e}")
             return
 
-        message_id = sent.message_id
-
         # Pin
-        if post.pin:
+        if post.pin and message_id:
             try:
-                await bot.pin_chat_message(chat_id=post.group_id, message_id=message_id, disable_notification=True)
+                await bot.pin_chat_message(chat_id=post.group_id, message_id=message_id)
             except Exception as e:
                 print(f"[!] Ошибка закрепления: {e}")
 
