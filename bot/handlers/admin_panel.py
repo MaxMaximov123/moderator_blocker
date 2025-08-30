@@ -324,6 +324,7 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 
 # === interval mailing step-by-step handlers ===
 from aiogram.utils.media_group import MediaGroupBuilder
+import asyncio
 
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
