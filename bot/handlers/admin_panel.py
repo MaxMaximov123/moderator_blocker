@@ -364,6 +364,7 @@ async def interval_get_message(msg: Message, state: FSMContext):
         # Очищаем временный список сообщений альбома
         await state.update_data(album_msgs=[])
         return
+
     # Если не альбом
     if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
         if content_type == "photo":

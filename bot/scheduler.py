@@ -31,9 +31,15 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             return
 
         try:
-            ct, media_file_id = post.media_file_id.split('+++')
+            if post.media_file_id:
+                parts = post.media_file_id.split('+++')
+                ct = parts[0]
+                media_ids = parts[1:]
+            else:
+                ct = "text"
+                media_ids = []
+
             sent = None
-            media_ids = media_file_id.split('+++')
             if len(media_ids) > 1:
                 media_group = []
                 for i, media_id in enumerate(media_ids):
@@ -53,6 +59,7 @@ async def send_scheduled_message(bot: Bot, post_id: int):
                         return
                 sent = await bot.send_media_group(chat_id=post.group_id, media=media_group)
             else:
+                media_file_id = media_ids[0] if media_ids else None
                 if ct == "text" or not media_file_id:
                     sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
                 elif ct == "photo":
