@@ -21,6 +21,7 @@ async def send_group_message(bot: Bot, group_id: int, text: str):
 from aiogram import Bot
 from db.models import ScheduledPost
 from sqlalchemy import delete, update
+from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation
 
 async def send_scheduled_message(bot: Bot, post_id: int):
     async with AsyncSession() as session:
@@ -30,64 +31,68 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             return
 
         try:
-            parts = post.media_file_id.split('+++')
-            ct = parts[0]
-            file_ids = parts[1:] if len(parts) > 1 else []
+            ct, media_file_id = post.media_file_id.split('+++')
             sent = None
-            # Media types that support albums
-            album_types = {"photo", "video", "document", "animation"}
-            if ct == "text" or not file_ids:
-                sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
-            elif ct in album_types and len(file_ids) > 1:
-                from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation
-                input_media_cls = {
-                    "photo": InputMediaPhoto,
-                    "video": InputMediaVideo,
-                    "document": InputMediaDocument,
-                    "animation": InputMediaAnimation,
-                }[ct]
-                media = []
-                for idx, fid in enumerate(file_ids):
-                    if idx == 0:
-                        media.append(input_media_cls(media=fid, caption=post.content or ""))
+            media_ids = media_file_id.split('+++')
+            if len(media_ids) > 1:
+                media_group = []
+                for i, media_id in enumerate(media_ids):
+                    caption = post.content if i == 0 else None
+                    if ct == "photo":
+                        media_group.append(InputMediaPhoto(media=media_id, caption=caption))
+                    elif ct == "video":
+                        media_group.append(InputMediaVideo(media=media_id, caption=caption))
+                    elif ct == "document":
+                        media_group.append(InputMediaDocument(media=media_id, caption=caption))
+                    elif ct == "audio":
+                        media_group.append(InputMediaAudio(media=media_id, caption=caption))
+                    elif ct == "animation":
+                        media_group.append(InputMediaAnimation(media=media_id, caption=caption))
                     else:
-                        media.append(input_media_cls(media=fid))
-                sent_list = await bot.send_media_group(chat_id=post.group_id, media=media)
-                sent = sent_list[0]  # For message_id and pin/delete logic
-            elif ct == "photo":
-                sent = await bot.send_photo(chat_id=post.group_id, photo=file_ids[0], caption=post.content or "")
-            elif ct == "video":
-                sent = await bot.send_video(chat_id=post.group_id, video=file_ids[0], caption=post.content or "")
-            elif ct == "document":
-                sent = await bot.send_document(chat_id=post.group_id, document=file_ids[0],
-                                               caption=post.content or "")
-            elif ct == "audio":
-                sent = await bot.send_audio(chat_id=post.group_id, audio=file_ids[0], caption=post.content or "")
-            elif ct == "voice":
-                sent = await bot.send_voice(chat_id=post.group_id, voice=file_ids[0])
-            elif ct == "animation":
-                sent = await bot.send_animation(chat_id=post.group_id, animation=file_ids[0],
-                                                caption=post.content or "")
-            elif ct == "sticker":
-                sent = await bot.send_sticker(chat_id=post.group_id, sticker=file_ids[0])
+                        print(f"[!] Неизвестный content_type для альбома: {ct}")
+                        return
+                sent = await bot.send_media_group(chat_id=post.group_id, media=media_group)
             else:
-                print(f"[!] Неизвестный content_type: {ct}")
-                return
+                if ct == "text" or not media_file_id:
+                    sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
+                elif ct == "photo":
+                    sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
+                elif ct == "video":
+                    sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
+                elif ct == "document":
+                    sent = await bot.send_document(chat_id=post.group_id, document=media_file_id,
+                                                   caption=post.content or "")
+                elif ct == "audio":
+                    sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
+                elif ct == "voice":
+                    sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
+                elif ct == "animation":
+                    sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id,
+                                                    caption=post.content or "")
+                elif ct == "sticker":
+                    sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
+                else:
+                    print(f"[!] Неизвестный content_type: {ct}")
+                    return
         except Exception as e:
             print(f"[!] Ошибка отправки поста {post_id}: {e}")
             return
 
-        message_id = sent.message_id
+        # message_id for pin/unpin/delete - if sent is a list (media group), take first message's id
+        if isinstance(sent, list):
+            message_id = sent[0].message_id if sent else None
+        else:
+            message_id = sent.message_id if sent else None
 
         # Pin
-        if post.pin:
+        if post.pin and message_id:
             try:
                 await bot.pin_chat_message(chat_id=post.group_id, message_id=message_id, disable_notification=True)
             except Exception as e:
                 print(f"[!] Ошибка закрепления: {e}")
 
         # Unpin
-        if post.unpin_after_minutes:
+        if post.unpin_after_minutes and message_id:
             scheduler.add_job(
                 bot.unpin_chat_message,
                 DateTrigger(run_date=datetime.datetime.now() + datetime.timedelta(minutes=post.unpin_after_minutes)),
@@ -95,19 +100,19 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             )
 
         # Delete
-        if post.delete_type == "immediately":
+        if post.delete_type == "immediately" and message_id:
             scheduler.add_job(
                 bot.delete_message,
                 DateTrigger(run_date=datetime.datetime.now() + datetime.timedelta(seconds=1)),
                 kwargs={"chat_id": post.group_id, "message_id": message_id}
             )
-        elif post.delete_type == "after" and post.delete_after_minutes:
+        elif post.delete_type == "after" and post.delete_after_minutes and message_id:
             scheduler.add_job(
                 bot.delete_message,
                 DateTrigger(run_date=datetime.datetime.now() + datetime.timedelta(minutes=post.delete_after_minutes)),
                 kwargs={"chat_id": post.group_id, "message_id": message_id}
             )
-        elif post.delete_type == "after_unpin" and post.unpin_after_minutes:
+        elif post.delete_type == "after_unpin" and post.unpin_after_minutes and message_id:
             scheduler.add_job(
                 bot.delete_message,
                 DateTrigger(run_date=datetime.datetime.now() + datetime.timedelta(minutes=post.unpin_after_minutes + 1)),

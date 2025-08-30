@@ -325,53 +325,59 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 # === interval mailing step-by-step handlers ===
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
+    # Поддержка альбомов (media_group_id)
     content_type = msg.content_type
-    caption = None
-    media_file_id = None
-
     file_ids = []
-    ct = None
-    if content_type == "photo":
-        ct = "photo"
-        file_ids = [p.file_id for p in msg.photo]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "video":
-        ct = "video"
-        file_ids = [msg.video.file_id]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "document":
-        ct = "document"
-        file_ids = [msg.document.file_id]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "audio":
-        ct = "audio"
-        file_ids = [msg.audio.file_id]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "voice":
-        ct = "voice"
-        file_ids = [msg.voice.file_id]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "animation":
-        ct = "animation"
-        file_ids = [msg.animation.file_id]
-        caption = msg.caption_html if msg.caption else ""
-    elif content_type == "sticker":
-        ct = "sticker"
-        file_ids = [msg.sticker.file_id]
-        caption = ""
+    caption = ""
+    # Если это альбом
+    if msg.media_group_id:
+        # Получаем все сообщения альбома из state
+        data = await state.get_data()
+        album_msgs = data.get("album_msgs", [])
+        album_msgs.append(msg)
+        await state.update_data(album_msgs=album_msgs)
+        # Проверяем, все ли части альбома пришли
+        # aiogram не гарантирует порядок, но мы ждем, пока не придет вся группа (обработка вне этого хэндлера)
+        # Поэтому если это не последняя часть, просто return
+        # (В идеале, нужна отдельная обработка через middleware, но делаем простую версию)
+        # Если пришло менее 2 сообщений, ждем еще
+        # (aiogram вызывает хэндлер на каждое сообщение, поэтому ждем, пока не будет хотя бы 2-х)
+        # Если это первая часть альбома, просто return и ждем остальные
+        if len(album_msgs) < 2:
+            return
+        # Собираем file_ids и подпись только из первого сообщения
+        content_type = album_msgs[0].content_type
+        for m in album_msgs:
+            if m.content_type == "photo":
+                file_ids.append(m.photo[-1].file_id)
+            elif m.content_type in ["video", "document", "animation", "audio", "voice", "sticker"]:
+                file_ids.append(getattr(m, m.content_type).file_id)
+            # подпись только из первого
+        caption = album_msgs[0].html_text if hasattr(album_msgs[0], "caption") and album_msgs[0].caption else ""
+        media_file_id = f"{content_type.value}" + "".join([f"+++{fid}" for fid in file_ids])
+        await state.update_data(
+            media_file_id=media_file_id,
+            message=caption,
+        )
+        await state.set_state(IntervalMailingState.waiting_for_interval)
+        await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+        # Очищаем временный список сообщений альбома
+        await state.update_data(album_msgs=[])
+        return
+    # Если не альбом
+    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
+        if content_type == "photo":
+            file_id = msg.photo[-1].file_id
+        else:
+            file_id = getattr(msg, content_type).file_id
+        caption = msg.html_text if hasattr(msg, "caption") and msg.caption else ""
+        media_file_id = f"{content_type.value}+++{file_id}"
     elif content_type == "text":
-        ct = "text"
         caption = msg.html_text
-        file_ids = []
+        media_file_id = "text"
     else:
         await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
         return
-
-    if file_ids:
-        media_file_id = f"{ct}+++" + "+++".join(file_ids)
-    else:
-        media_file_id = f"{ct}"
-
     await state.update_data(
         media_file_id=media_file_id,
         message=caption,
