@@ -346,14 +346,14 @@ async def interval_get_message(msg: Message, state: FSMContext):
             if len(album) > 1:
                 await state.update_data(messages=album)
                 await state.set_state(IntervalMailingState.waiting_for_interval)
-                await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+                await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d:")
             await state.update_data(album_processing=False)
         return
 
     # Одиночное сообщение
     await state.update_data(messages=[msg])
     await state.set_state(IntervalMailingState.waiting_for_interval)
-    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30,
+    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
 
 @router.message(IntervalMailingState.waiting_for_interval)
 async def interval_get_interval(msg: Message, state: FSMContext):
