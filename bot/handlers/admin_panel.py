@@ -326,20 +326,54 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
     content_type = msg.content_type
-    file_id = None
     caption = None
+    media_file_id = None
 
-    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        file_id = getattr(msg, content_type).file_id if content_type != "photo" else msg.photo[-1].file_id
-        caption = msg.html_text if hasattr(msg, "caption") else ""
+    file_ids = []
+    ct = None
+    if content_type == "photo":
+        ct = "photo"
+        file_ids = [p.file_id for p in msg.photo]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "video":
+        ct = "video"
+        file_ids = [msg.video.file_id]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "document":
+        ct = "document"
+        file_ids = [msg.document.file_id]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "audio":
+        ct = "audio"
+        file_ids = [msg.audio.file_id]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "voice":
+        ct = "voice"
+        file_ids = [msg.voice.file_id]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "animation":
+        ct = "animation"
+        file_ids = [msg.animation.file_id]
+        caption = msg.caption_html if msg.caption else ""
+    elif content_type == "sticker":
+        ct = "sticker"
+        file_ids = [msg.sticker.file_id]
+        caption = ""
     elif content_type == "text":
+        ct = "text"
         caption = msg.html_text
+        file_ids = []
     else:
         await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
         return
 
+    if file_ids:
+        media_file_id = f"{ct}+++" + "+++".join(file_ids)
+    else:
+        media_file_id = f"{ct}"
+
     await state.update_data(
-        media_file_id=f"{content_type.value}+++{file_id}",
+        media_file_id=media_file_id,
         message=caption,
     )
     await state.set_state(IntervalMailingState.waiting_for_interval)

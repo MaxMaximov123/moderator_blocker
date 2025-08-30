@@ -30,26 +30,46 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             return
 
         try:
-            ct, media_file_id = post.media_file_id.split('+++')
+            parts = post.media_file_id.split('+++')
+            ct = parts[0]
+            file_ids = parts[1:] if len(parts) > 1 else []
             sent = None
-            if ct == "text" or not media_file_id:
+            # Media types that support albums
+            album_types = {"photo", "video", "document", "animation"}
+            if ct == "text" or not file_ids:
                 sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
+            elif ct in album_types and len(file_ids) > 1:
+                from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation
+                input_media_cls = {
+                    "photo": InputMediaPhoto,
+                    "video": InputMediaVideo,
+                    "document": InputMediaDocument,
+                    "animation": InputMediaAnimation,
+                }[ct]
+                media = []
+                for idx, fid in enumerate(file_ids):
+                    if idx == 0:
+                        media.append(input_media_cls(media=fid, caption=post.content or ""))
+                    else:
+                        media.append(input_media_cls(media=fid))
+                sent_list = await bot.send_media_group(chat_id=post.group_id, media=media)
+                sent = sent_list[0]  # For message_id and pin/delete logic
             elif ct == "photo":
-                sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
+                sent = await bot.send_photo(chat_id=post.group_id, photo=file_ids[0], caption=post.content or "")
             elif ct == "video":
-                sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
+                sent = await bot.send_video(chat_id=post.group_id, video=file_ids[0], caption=post.content or "")
             elif ct == "document":
-                sent = await bot.send_document(chat_id=post.group_id, document=media_file_id,
+                sent = await bot.send_document(chat_id=post.group_id, document=file_ids[0],
                                                caption=post.content or "")
             elif ct == "audio":
-                sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
+                sent = await bot.send_audio(chat_id=post.group_id, audio=file_ids[0], caption=post.content or "")
             elif ct == "voice":
-                sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
+                sent = await bot.send_voice(chat_id=post.group_id, voice=file_ids[0])
             elif ct == "animation":
-                sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id,
+                sent = await bot.send_animation(chat_id=post.group_id, animation=file_ids[0],
                                                 caption=post.content or "")
             elif ct == "sticker":
-                sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
+                sent = await bot.send_sticker(chat_id=post.group_id, sticker=file_ids[0])
             else:
                 print(f"[!] Неизвестный content_type: {ct}")
                 return
