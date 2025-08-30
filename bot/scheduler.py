@@ -22,6 +22,9 @@ from aiogram import Bot
 from db.models import ScheduledPost
 from sqlalchemy import delete, update
 
+import json
+from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
+
 async def send_scheduled_message(bot: Bot, post_id: int):
     async with AsyncSession() as session:
         post = await session.get(ScheduledPost, post_id)
@@ -29,30 +32,63 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             print("Post didn't found")
             return
 
+        sent = None
         try:
-            ct, media_file_id = post.media_file_id.split('+++')
-            sent = None
-            if ct == "text" or not media_file_id:
-                sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
-            elif ct == "photo":
-                sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
-            elif ct == "video":
-                sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
-            elif ct == "document":
-                sent = await bot.send_document(chat_id=post.group_id, document=media_file_id,
-                                               caption=post.content or "")
-            elif ct == "audio":
-                sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
-            elif ct == "voice":
-                sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
-            elif ct == "animation":
-                sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id,
-                                                caption=post.content or "")
-            elif ct == "sticker":
-                sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
+            # Попытка загрузить как альбом (список сообщений)
+            try:
+                messages = json.loads(post.content)
+            except Exception:
+                messages = None
+
+            if messages and isinstance(messages, list) and len(messages) > 1:
+                # Альбом
+                media = []
+                for item in messages:
+                    if item["type"] == "photo":
+                        media.append(InputMediaPhoto(media=item["file_id"], caption=item.get("caption")))
+                    elif item["type"] == "video":
+                        media.append(InputMediaVideo(media=item["file_id"], caption=item.get("caption")))
+                    elif item["type"] == "document":
+                        media.append(InputMediaDocument(media=item["file_id"], caption=item.get("caption")))
+                    # Добавьте другие типы при необходимости
+                sent_msgs = await bot.send_media_group(chat_id=post.group_id, media=media)
+                message_id = sent_msgs[0].message_id  # Для pin/unpin/delete используем первый
+            elif messages and isinstance(messages, list) and len(messages) == 1:
+                # Одиночное сообщение (универсально)
+                item = messages[0]
+                if item["type"] == "text":
+                    sent = await bot.send_message(chat_id=post.group_id, text=item["text"])
+                elif item["type"] == "photo":
+                    sent = await bot.send_photo(chat_id=post.group_id, photo=item["file_id"], caption=item.get("caption"))
+                elif item["type"] == "video":
+                    sent = await bot.send_video(chat_id=post.group_id, video=item["file_id"], caption=item.get("caption"))
+                elif item["type"] == "document":
+                    sent = await bot.send_document(chat_id=post.group_id, document=item["file_id"], caption=item.get("caption"))
+                # ... другие типы
+                message_id = sent.message_id
             else:
-                print(f"[!] Неизвестный content_type: {ct}")
-                return
+                # Старый формат (одиночное сообщение)
+                ct, media_file_id = post.media_file_id.split('+++')
+                if ct == "text" or not media_file_id:
+                    sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
+                elif ct == "photo":
+                    sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
+                elif ct == "video":
+                    sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
+                elif ct == "document":
+                    sent = await bot.send_document(chat_id=post.group_id, document=media_file_id, caption=post.content or "")
+                elif ct == "audio":
+                    sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
+                elif ct == "voice":
+                    sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
+                elif ct == "animation":
+                    sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id, caption=post.content or "")
+                elif ct == "sticker":
+                    sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
+                else:
+                    print(f"[!] Неизвестный content_type: {ct}")
+                    return
+                message_id = sent.message_id
         except Exception as e:
             print(f"[!] Ошибка отправки поста {post_id}: {e}")
             return

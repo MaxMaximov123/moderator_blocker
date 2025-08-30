@@ -323,25 +323,30 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 
 
 # === interval mailing step-by-step handlers ===
+from aiogram.utils.media_group import MediaGroupBuilder
+
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
-    content_type = msg.content_type
-    file_id = None
-    caption = None
+    data = await state.get_data()
+    media_group_id = msg.media_group_id
 
-    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        file_id = getattr(msg, content_type).file_id if content_type != "photo" else msg.photo[-1].file_id
-        caption = msg.html_text if hasattr(msg, "caption") else ""
-    elif content_type == "text":
-        caption = msg.html_text
-    else:
-        await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
+    # Если это альбом, собираем все сообщения альбома
+    if media_group_id:
+        album = data.get("album", [])
+        album.append(msg)
+        await state.update_data(album=album)
+
+        # Ждем остальные сообщения альбома (aiogram присылает их подряд)
+        await asyncio.sleep(1.5)
+        album = (await state.get_data()).get("album", [])
+        if len(album) > 1:
+            await state.update_data(messages=album)
+            await state.set_state(IntervalMailingState.waiting_for_interval)
+            await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
         return
 
-    await state.update_data(
-        media_file_id=f"{content_type.value}+++{file_id}",
-        message=caption,
-    )
+    # Одиночное сообщение
+    await state.update_data(messages=[msg])
     await state.set_state(IntervalMailingState.waiting_for_interval)
     await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
 
@@ -753,27 +758,41 @@ async def get_admin_groups(session, username):
     return result.scalars().all()
 
 
+import json
+
 async def add_scheduled_post(data, bot: Bot):
-    pprint(data)
+    messages = data["messages"]
+    # Сохраняем список dict с нужными полями (тип, file_id, caption и т.д.)
+    serialized = []
+    for msg in messages:
+        item = {
+            "type": msg.content_type,
+            "caption": getattr(msg, "caption", None),
+        }
+        if msg.content_type == "photo":
+            item["file_id"] = msg.photo[-1].file_id
+        elif msg.content_type in ["video", "document", "audio", "animation", "voice", "sticker"]:
+            item["file_id"] = getattr(msg, msg.content_type).file_id
+        elif msg.content_type == "text":
+            item["text"] = msg.html_text
+        serialized.append(item)
+
     async with AsyncSession() as session:
         post = ScheduledPost(
             group_id=data["group_id"],
             type="interval",
-            content=data["message"],
+            content=json.dumps(serialized),  # сохраняем как JSON
             interval_minutes=data["interval"],
             repeat_count=data["repeats"],
             pin=data.get("pin", False),
             unpin_after_minutes=data.get("unpin_after", None),
             delete_type=data["delete_type"],
             delete_after_minutes=data["delete_delay"],
-            media_file_id=data["media_file_id"]
         )
         session.add(post)
         await session.flush()
-
         await add_post_to_schedule(bot, post)
         await session.commit()
-
 
 async def add_timed_post(data, bot: Bot):
     async with AsyncSession() as session:
