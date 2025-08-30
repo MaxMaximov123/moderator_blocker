@@ -24,9 +24,6 @@ async def limit_checker(msg: Message, bot: Bot):
     if msg.content_type in {"new_chat_members", "left_chat_member", "pinned_message"}:
         return
 
-    if msg.content_type in {"new_chat_members", "left_chat_member", "pinned_message"}:
-        return
-
     async with AsyncSession() as session:
         stmt = select(UnblockedUserLimit).where(
             UnblockedUserLimit.user_id == user_id,
@@ -38,6 +35,10 @@ async def limit_checker(msg: Message, bot: Bot):
         group = await session.get(Group, group_id)
         if not group:
             return
+        
+        if group.limit_msg is None:
+            return
+
 
         # Определяем лимит
         base_limit = group.limit_msg
