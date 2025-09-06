@@ -21,6 +21,8 @@ class UnlockState(StatesGroup):
 async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
 
+    print(msg.forward_from)
+
     # Проверяем, есть ли данные об исходном пользователе
     if msg.forward_from is None:
         await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.")
