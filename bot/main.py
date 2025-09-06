@@ -49,9 +49,9 @@ async def on_startup():
 
     # 3. Регистрация роутеров
     dp.include_routers(
+        forwarding.router,
         admin_panel.router,
         group_events.router,
-        forwarding.router,
         limits.router
     )
 
