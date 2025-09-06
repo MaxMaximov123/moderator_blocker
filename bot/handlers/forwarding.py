@@ -20,8 +20,13 @@ class UnlockState(StatesGroup):
 @router.message(F.forward_from)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
-    forwarded_user_id = msg.forward_from.id
 
+    # Проверяем, есть ли данные об исходном пользователе
+    if msg.forward_from is None:
+        await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.")
+        return
+
+    forwarded_user_id = msg.forward_from.id
     print(forwarded_user_id)
 
     await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
@@ -47,7 +52,6 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
         ])
         await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
         await state.set_state(UnlockState.waiting_for_group_selection)
-
 
 @router.callback_query(StateFilter(UnlockState.waiting_for_group_selection), F.data.startswith("unlock_"))
 async def process_group_select(cb: CallbackQuery, state: FSMContext):
