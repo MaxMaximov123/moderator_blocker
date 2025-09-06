@@ -22,6 +22,8 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
     forwarded_user_id = msg.forward_from.id
 
+    print(forwarded_user_id)
+
     await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
 
     async with AsyncSession() as session:
