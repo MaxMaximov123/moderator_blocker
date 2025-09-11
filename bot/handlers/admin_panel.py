@@ -17,6 +17,49 @@ from db.models import UnblockedUserLimit
 
 router = Router()
 
+async def handle_incoming_message(msg: Message, state: FSMContext, next_state):
+    caption = ""
+    media_parts = []
+
+    # Текст
+    if msg.content_type == "text":
+        caption = msg.html_text
+        await state.update_data(media_file_id="text", message=caption)
+        await state.set_state(next_state)
+        return True
+
+    # Проверяем есть ли caption
+    if hasattr(msg, "caption") and msg.caption:
+        caption = msg.caption_html or msg.caption
+
+    # Если альбом (media_group_id доступен только у медиа)
+    if getattr(msg, "media_group_id", None):
+        data = await state.get_data()
+        album = data.get("album", [])
+
+        # добавляем текущий элемент
+        if msg.content_type == "photo":
+            album.append(f"photo+++{msg.photo[-1].file_id}")
+        else:
+            file_id = getattr(msg, msg.content_type).file_id
+            album.append(f"{msg.content_type}+++{file_id}")
+
+        await state.update_data(album=album, message=caption)
+        return False  # ждём остальные части альбома
+
+    # Одиночное медиа
+    if msg.content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
+        file_id = msg.photo[-1].file_id if msg.content_type == "photo" else getattr(msg, msg.content_type).file_id
+        await state.update_data(
+            media_file_id=f"{msg.content_type}+++{file_id}",
+            message=caption,
+        )
+        await state.set_state(next_state)
+        return True
+
+    await msg.answer("Отправьте текст или поддерживаемое медиа.")
+    return False
+
 
 @router.message(F.text == "/cancel", StateFilter("*"))
 async def cancel_state(msg: Message, state: FSMContext):
@@ -325,26 +368,9 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 # === interval mailing step-by-step handlers ===
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
-    content_type = msg.content_type
-    file_id = None
-    caption = None
-
-    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        file_id = getattr(msg, content_type).file_id if content_type != "photo" else msg.photo[-1].file_id
-        caption = msg.html_text if hasattr(msg, "caption") else ""
-    elif content_type == "text":
-        caption = msg.html_text
-    else:
-        await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
-        return
-
-    await state.update_data(
-        media_file_id=f"{content_type.value}+++{file_id}",
-        message=caption,
-    )
-    await state.set_state(IntervalMailingState.waiting_for_interval)
-    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
-
+    finished = await handle_incoming_message(msg, state, IntervalMailingState.waiting_for_interval)
+    if finished:
+        await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
 @router.message(IntervalMailingState.waiting_for_interval)
 async def interval_get_interval(msg: Message, state: FSMContext):
     raw = msg.text.lower().strip()
@@ -495,27 +521,9 @@ async def timed_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(TimedMailingState.waiting_for_message)
 async def timed_get_message(msg: Message, state: FSMContext):
-    content_type = msg.content_type
-    file_id = None
-    caption = None
-
-    if content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        file_id = getattr(msg, content_type).file_id if content_type != "photo" else msg.photo[-1].file_id
-        caption = msg.html_text if hasattr(msg, "caption") else ""
-    elif content_type == "text":
-        caption = msg.html_text
-    else:
-        await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
-        return
-
-    await state.update_data(
-        media_file_id=f"{content_type.value}+++{file_id}",
-        message=caption,
-    )
-
-    await state.set_state(TimedMailingState.waiting_for_date)
-    await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
-
+    finished = await handle_incoming_message(msg, state, TimedMailingState.waiting_for_date)
+    if finished:
+        await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
 
 @router.message(TimedMailingState.waiting_for_date)
 async def timed_get_date(msg: Message, state: FSMContext):

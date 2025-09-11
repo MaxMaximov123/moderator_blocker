@@ -30,29 +30,52 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             return
 
         try:
-            ct, media_file_id = post.media_file_id.split('+++')
+            from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation
+            media_parts = post.media_file_id.split('---') if post.media_file_id else []
             sent = None
-            if ct == "text" or not media_file_id:
+
+            # Если нет медиа или явно текст
+            if not media_parts or media_parts[0].startswith("text"):
                 sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
-            elif ct == "photo":
-                sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
-            elif ct == "video":
-                sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
-            elif ct == "document":
-                sent = await bot.send_document(chat_id=post.group_id, document=media_file_id,
-                                               caption=post.content or "")
-            elif ct == "audio":
-                sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
-            elif ct == "voice":
-                sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
-            elif ct == "animation":
-                sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id,
-                                                caption=post.content or "")
-            elif ct == "sticker":
-                sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
+            # Если одно медиа
+            elif len(media_parts) == 1:
+                ct, fid = media_parts[0].split("+++")
+                if ct == "photo":
+                    sent = await bot.send_photo(post.group_id, fid, caption=post.content or "")
+                elif ct == "video":
+                    sent = await bot.send_video(post.group_id, fid, caption=post.content or "")
+                elif ct == "document":
+                    sent = await bot.send_document(post.group_id, fid, caption=post.content or "")
+                elif ct == "audio":
+                    sent = await bot.send_audio(post.group_id, fid, caption=post.content or "")
+                elif ct == "animation":
+                    sent = await bot.send_animation(post.group_id, fid, caption=post.content or "")
+                elif ct == "voice":
+                    sent = await bot.send_voice(post.group_id, fid)
+                elif ct == "sticker":
+                    sent = await bot.send_sticker(post.group_id, fid)
+                else:
+                    print(f"[!] Неизвестный content_type: {ct}")
+                    return
+            # Если несколько медиа (альбом)
             else:
-                print(f"[!] Неизвестный content_type: {ct}")
-                return
+                media_group = []
+                for i, part in enumerate(media_parts):
+                    ct, fid = part.split("+++")
+                    caption = post.content if i == 0 else None
+                    if ct == "photo":
+                        media_group.append(InputMediaPhoto(media=fid, caption=caption))
+                    elif ct == "video":
+                        media_group.append(InputMediaVideo(media=fid, caption=caption))
+                    elif ct == "document":
+                        media_group.append(InputMediaDocument(media=fid, caption=caption))
+                    elif ct == "audio":
+                        media_group.append(InputMediaAudio(media=fid, caption=caption))
+                    elif ct == "animation":
+                        media_group.append(InputMediaAnimation(media=fid, caption=caption))
+                    # Не поддерживаемые типы в альбоме (voice, sticker) игнорируем
+                messages = await bot.send_media_group(chat_id=post.group_id, media=media_group)
+                sent = messages[0]
         except Exception as e:
             print(f"[!] Ошибка отправки поста {post_id}: {e}")
             return
