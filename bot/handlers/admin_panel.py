@@ -533,6 +533,7 @@ async def timed_get_message(msg: Message, state: FSMContext):
         source_message_id=msg.message_id
     )
 
+
     await state.set_state(TimedMailingState.waiting_for_date)
     await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
 
