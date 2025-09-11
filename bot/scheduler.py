@@ -29,50 +29,30 @@ async def send_scheduled_message(bot: Bot, post_id: int):
             print("Post didn't found")
             return
 
-        sent = None
         try:
-            # Check if ScheduledPost has source_chat_id and source_message_id for copy_message
-            if hasattr(post, 'source_chat_id') and hasattr(post, 'source_message_id') and post.source_chat_id and post.source_message_id:
-                sent = await bot.copy_message(chat_id=post.group_id, from_chat_id=post.source_chat_id, message_id=post.source_message_id, caption=post.content or None)
+            ct, media_file_id = post.media_file_id.split('+++')
+            sent = None
+            if ct == "text" or not media_file_id:
+                sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
+            elif ct == "photo":
+                sent = await bot.send_photo(chat_id=post.group_id, photo=media_file_id, caption=post.content or "")
+            elif ct == "video":
+                sent = await bot.send_video(chat_id=post.group_id, video=media_file_id, caption=post.content or "")
+            elif ct == "document":
+                sent = await bot.send_document(chat_id=post.group_id, document=media_file_id,
+                                               caption=post.content or "")
+            elif ct == "audio":
+                sent = await bot.send_audio(chat_id=post.group_id, audio=media_file_id, caption=post.content or "")
+            elif ct == "voice":
+                sent = await bot.send_voice(chat_id=post.group_id, voice=media_file_id)
+            elif ct == "animation":
+                sent = await bot.send_animation(chat_id=post.group_id, animation=media_file_id,
+                                                caption=post.content or "")
+            elif ct == "sticker":
+                sent = await bot.send_sticker(chat_id=post.group_id, sticker=media_file_id)
             else:
-                # Fallback to old logic if source_chat_id/source_message_id not available
-                from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation
-                media_parts = post.media_file_id.split('---') if post.media_file_id else []
-
-                # Если нет медиа или явно текст
-                if not media_parts or media_parts[0].startswith("text"):
-                    sent = await bot.send_message(chat_id=post.group_id, text=post.content or "")
-                # Если одно медиа
-                elif len(media_parts) == 1:
-                    ct, fid = media_parts[0].split("+++")
-                    if ct == "photo":
-                        sent = await bot.send_photo(post.group_id, fid, caption=post.content or "")
-                    elif ct == "video":
-                        sent = await bot.send_video(post.group_id, fid, caption=post.content or "")
-                    elif ct == "document":
-                        sent = await bot.send_document(post.group_id, fid, caption=post.content or "")
-                    elif ct == "audio":
-                        sent = await bot.send_audio(post.group_id, fid, caption=post.content or "")
-                    elif ct == "animation":
-                        sent = await bot.send_animation(post.group_id, fid, caption=post.content or "")
-                    elif ct == "voice":
-                        sent = await bot.send_voice(post.group_id, fid)
-                    elif ct == "sticker":
-                        sent = await bot.send_sticker(post.group_id, fid)
-                    else:
-                        print(f"[!] Неизвестный content_type: {ct}")
-                        return
-                # Если несколько медиа (альбом)
-                else:
-                    if hasattr(post, 'source_chat_id') and hasattr(post, 'source_message_id') and post.source_chat_id and post.source_message_id:
-                        sent = await bot.copy_message(
-                            chat_id=post.group_id,
-                            from_chat_id=post.source_chat_id,
-                            message_id=post.source_message_id
-                        )
-                    else:
-                        print(f"[!] Невозможно переслать альбом {post_id}, отсутствуют данные source_chat_id/source_message_id")
-                        return
+                print(f"[!] Неизвестный content_type: {ct}")
+                return
         except Exception as e:
             print(f"[!] Ошибка отправки поста {post_id}: {e}")
             return

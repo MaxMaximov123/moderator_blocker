@@ -7,6 +7,8 @@ from sqlalchemy import select
 from db.session import AsyncSession
 from db.models import Admin, Group, UnblockedUserLimit
 
+from ..main import bot
+
 router = Router()
 
 
@@ -19,6 +21,9 @@ class UnlockState(StatesGroup):
 # При пересланном сообщении
 @router.message(F.forward_from)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
+    print('Sending test message')
+    sent = await bot.copy_message(chat_id='-1002727718255', from_chat_id='1387680086',
+                                  message_id='2266')
     sender_id = msg.from_user.id
 
     print(msg.forward_from)
