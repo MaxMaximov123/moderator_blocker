@@ -528,9 +528,13 @@ async def timed_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(TimedMailingState.waiting_for_message)
 async def timed_get_message(msg: Message, state: FSMContext):
-    finished = await handle_incoming_message(msg, state, TimedMailingState.waiting_for_date)
-    if finished:
-        await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
+    await state.update_data(
+        source_chat_id=msg.chat.id,
+        source_message_id=msg.message_id
+    )
+
+    await state.set_state(TimedMailingState.waiting_for_date)
+    await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
 
 @router.message(TimedMailingState.waiting_for_date)
 async def timed_get_date(msg: Message, state: FSMContext):
