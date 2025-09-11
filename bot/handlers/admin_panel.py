@@ -366,11 +366,18 @@ async def interval_start(cb: CallbackQuery, state: FSMContext):
 
 
 # === interval mailing step-by-step handlers ===
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+
 @router.message(IntervalMailingState.waiting_for_message)
 async def interval_get_message(msg: Message, state: FSMContext):
-    finished = await handle_incoming_message(msg, state, IntervalMailingState.waiting_for_interval)
-    if finished:
-        await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
+    # сохраняем message_id и chat_id, вместо разборов
+    await state.update_data(
+        source_chat_id=msg.chat.id,
+        source_message_id=msg.message_id
+    )
+    await state.set_state(IntervalMailingState.waiting_for_interval)
+    await msg.answer("Укажи интервал в минутах/часах/днях (например, 30, 2h, 1d):")
 @router.message(IntervalMailingState.waiting_for_interval)
 async def interval_get_interval(msg: Message, state: FSMContext):
     raw = msg.text.lower().strip()
