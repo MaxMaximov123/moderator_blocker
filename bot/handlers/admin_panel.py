@@ -829,6 +829,8 @@ async def planned_posts_list(cb: CallbackQuery, bot: Bot):
                             else:
                                 # пропустить неизвестный тип
                                 continue
+
+                        print('sent album', input_media)
                         sent_msgs = await bot.send_media_group(chat_id=cb.from_user.id, media=input_media)
                         album_sent = True
                         # После альбома — параметры отдельным сообщением
