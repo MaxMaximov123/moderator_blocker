@@ -761,6 +761,8 @@ async def timed_get_delete_delay(msg: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("planned_posts_"))
 async def planned_posts_list(cb: CallbackQuery, bot: Bot):
+    import json
+    from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
     group_id = int(cb.data.split("_")[-1])
     await cb.message.delete()
 
@@ -804,36 +806,95 @@ async def planned_posts_list(cb: CallbackQuery, bot: Bot):
         params_text = "\n".join(details)
 
         try:
-            ct = "text"
-            media_id = ""
-            if post.media_file_id and "+++" in post.media_file_id:
-                ct, media_id = post.media_file_id.split("+++")
-
-            if ct == "text" or not media_id:
-                await bot.send_message(
-                    chat_id=cb.from_user.id,
-                    text=f"{post.content or '(пусто)'}\n\n{params_text}",
-                    reply_markup=kb
-                )
-            elif ct == "photo":
-                await bot.send_photo(chat_id=cb.from_user.id, photo=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
-            elif ct == "video":
-                await bot.send_video(chat_id=cb.from_user.id, video=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
-            elif ct == "document":
-                await bot.send_document(chat_id=cb.from_user.id, document=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
-            elif ct == "audio":
-                await bot.send_audio(chat_id=cb.from_user.id, audio=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
-            elif ct == "voice":
-                await bot.send_voice(chat_id=cb.from_user.id, voice=media_id, reply_markup=kb)
-                await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
-            elif ct == "animation":
-                await bot.send_animation(chat_id=cb.from_user.id, animation=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
-            elif ct == "sticker":
-                await bot.send_sticker(chat_id=cb.from_user.id, sticker=media_id, reply_markup=kb)
-                await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
-            else:
-                await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ❓ Неизвестный тип контента", reply_markup=kb)
-
+            # Новый формат: media_file_id как JSON
+            album_sent = False
+            if post.media_file_id:
+                try:
+                    media_items = json.loads(post.media_file_id)
+                    if isinstance(media_items, list) and len(media_items) > 1:
+                        # Альбом
+                        input_media = []
+                        for i, item in enumerate(media_items):
+                            ct = item.get("type")
+                            fid = item.get("file_id")
+                            caption = post.content if i == 0 else None
+                            if ct == "photo":
+                                input_media.append(InputMediaPhoto(media=fid, caption=caption))
+                            elif ct == "video":
+                                input_media.append(InputMediaVideo(media=fid, caption=caption))
+                            elif ct == "document":
+                                input_media.append(InputMediaDocument(media=fid, caption=caption))
+                            elif ct == "audio":
+                                input_media.append(InputMediaAudio(media=fid, caption=caption))
+                            else:
+                                # пропустить неизвестный тип
+                                continue
+                        sent_msgs = await bot.send_media_group(chat_id=cb.from_user.id, media=input_media)
+                        album_sent = True
+                        # После альбома — параметры отдельным сообщением
+                        await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                    elif isinstance(media_items, list) and len(media_items) == 1:
+                        # Одиночное медиа/текст
+                        ct = media_items[0].get("type")
+                        fid = media_items[0].get("file_id")
+                        if ct == "text" or not fid:
+                            await bot.send_message(
+                                chat_id=cb.from_user.id,
+                                text=f"{post.content or '(пусто)'}\n\n{params_text}",
+                                reply_markup=kb
+                            )
+                        elif ct == "photo":
+                            await bot.send_photo(chat_id=cb.from_user.id, photo=fid, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                        elif ct == "video":
+                            await bot.send_video(chat_id=cb.from_user.id, video=fid, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                        elif ct == "document":
+                            await bot.send_document(chat_id=cb.from_user.id, document=fid, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                        elif ct == "audio":
+                            await bot.send_audio(chat_id=cb.from_user.id, audio=fid, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                        elif ct == "voice":
+                            await bot.send_voice(chat_id=cb.from_user.id, voice=fid, reply_markup=kb)
+                            await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                        elif ct == "animation":
+                            await bot.send_animation(chat_id=cb.from_user.id, animation=fid, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                        elif ct == "sticker":
+                            await bot.send_sticker(chat_id=cb.from_user.id, sticker=fid, reply_markup=kb)
+                            await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                        else:
+                            await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ❓ Неизвестный тип контента", reply_markup=kb)
+                        album_sent = True
+                except Exception:
+                    # Не парсится как JSON — fallback на старый формат
+                    pass
+            if not album_sent:
+                # Старый формат: "ct+++fid"
+                ct = "text"
+                media_id = ""
+                if post.media_file_id and "+++" in post.media_file_id:
+                    ct, media_id = post.media_file_id.split("+++")
+                if ct == "text" or not media_id:
+                    await bot.send_message(
+                        chat_id=cb.from_user.id,
+                        text=f"{post.content or '(пусто)'}\n\n{params_text}",
+                        reply_markup=kb
+                    )
+                elif ct == "photo":
+                    await bot.send_photo(chat_id=cb.from_user.id, photo=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                elif ct == "video":
+                    await bot.send_video(chat_id=cb.from_user.id, video=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                elif ct == "document":
+                    await bot.send_document(chat_id=cb.from_user.id, document=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                elif ct == "audio":
+                    await bot.send_audio(chat_id=cb.from_user.id, audio=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                elif ct == "voice":
+                    await bot.send_voice(chat_id=cb.from_user.id, voice=media_id, reply_markup=kb)
+                    await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                elif ct == "animation":
+                    await bot.send_animation(chat_id=cb.from_user.id, animation=media_id, caption=f"{post.content or ''}\n\n{params_text}", reply_markup=kb)
+                elif ct == "sticker":
+                    await bot.send_sticker(chat_id=cb.from_user.id, sticker=media_id, reply_markup=kb)
+                    await bot.send_message(chat_id=cb.from_user.id, text=params_text, reply_markup=kb)
+                else:
+                    await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ❓ Неизвестный тип контента", reply_markup=kb)
         except Exception as e:
             print(f"[!] Ошибка отображения запланированного поста {post.id}: {e}")
             await bot.send_message(chat_id=cb.from_user.id, text=f"[ID {post.id}] ⚠️ Ошибка отображения", reply_markup=kb)
