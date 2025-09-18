@@ -552,80 +552,90 @@ async def timed_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(TimedMailingState.waiting_for_message)
 async def timed_get_message(msg: Message, state: FSMContext):
-    import json
-    media_items = []
-    caption = None
+    data = await state.get_data()
+    album_buffer = data.get("album_buffer", {})
+
     if msg.media_group_id:
-        if msg.photo:
-            for ph in msg.photo:
-                media_items.append({"type": "photo", "file_id": ph.file_id})
+        group_id = msg.media_group_id
+        if "album_buffer" not in data:
+            data["album_buffer"] = {}
+        if group_id not in data["album_buffer"]:
+            data["album_buffer"][group_id] = []
+        data["album_buffer"][group_id].append(msg)
+        await state.update_data(album_buffer=data["album_buffer"])
+
+        await sleep(0.5)  # ждём, пока все сообщения альбома дойдут
+
+        current_data = await state.get_data()
+        buffer = current_data.get("album_buffer", {}).get(group_id, [])
+        if buffer and buffer[0].message_id == msg.message_id:
+            media_items = []
+            caption = None
+            for m in buffer:
+                if m.photo:
+                    media_items.append({"type": "photo", "file_id": m.photo[-1].file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.video:
+                    media_items.append({"type": "video", "file_id": m.video.file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.document:
+                    media_items.append({"type": "document", "file_id": m.document.file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.audio:
+                    media_items.append({"type": "audio", "file_id": m.audio.file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.animation:
+                    media_items.append({"type": "animation", "file_id": m.animation.file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.voice:
+                    media_items.append({"type": "voice", "file_id": m.voice.file_id})
+                    if not caption:
+                        caption = m.caption or m.html_text or ""
+                elif m.sticker:
+                    media_items.append({"type": "sticker", "file_id": m.sticker.file_id})
+                    caption = ""
+
+            media_json = json.dumps(media_items)
+
+            await state.update_data(
+                media_file_id=media_json,
+                message=caption,
+            )
+            await state.set_state(TimedMailingState.waiting_for_date)
+            await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
+
+    else:
+        media_items = []
+        caption = None
+        if msg.content_type == "text":
+            caption = msg.html_text
+            media_items = [{"type": "text", "file_id": None}]
+        elif msg.photo:
+            media_items = [{"type": "photo", "file_id": msg.photo[-1].file_id}]
             caption = msg.caption or msg.html_text or ""
         elif msg.video:
-            media_items.append({"type": "video", "file_id": msg.video.file_id})
+            media_items = [{"type": "video", "file_id": msg.video.file_id}]
             caption = msg.caption or msg.html_text or ""
         elif msg.document:
-            media_items.append({"type": "document", "file_id": msg.document.file_id})
+            media_items = [{"type": "document", "file_id": msg.document.file_id}]
             caption = msg.caption or msg.html_text or ""
-        elif msg.audio:
-            media_items.append({"type": "audio", "file_id": msg.audio.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.animation:
-            media_items.append({"type": "animation", "file_id": msg.animation.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.voice:
-            media_items.append({"type": "voice", "file_id": msg.voice.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.sticker:
-            media_items.append({"type": "sticker", "file_id": msg.sticker.file_id})
-            caption = ""
-        else:
-            await msg.answer("Отправьте медиа (фото, видео, гифка, документ, стикер, аудио, голосовое) для альбома.")
-            return
-    elif msg.content_type in ["photo", "video", "document", "animation", "audio", "voice", "sticker"]:
-        if msg.content_type == "photo":
-            media_items.append({"type": "photo", "file_id": msg.photo[-1].file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "video":
-            media_items.append({"type": "video", "file_id": msg.video.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "document":
-            media_items.append({"type": "document", "file_id": msg.document.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "audio":
-            media_items.append({"type": "audio", "file_id": msg.audio.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "animation":
-            media_items.append({"type": "animation", "file_id": msg.animation.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "voice":
-            media_items.append({"type": "voice", "file_id": msg.voice.file_id})
-            caption = msg.caption or msg.html_text or ""
-        elif msg.content_type == "sticker":
-            media_items.append({"type": "sticker", "file_id": msg.sticker.file_id})
-            caption = ""
-    elif msg.content_type == "text":
-        caption = msg.html_text
-        media_items = []
-    else:
-        await msg.answer("Отправьте текст или медиа (фото, видео, гифка, документ, стикер, аудио, голосовое).")
-        return
 
-    if not media_items:
-        media_json = json.dumps([{"type": "text", "file_id": None}])
-    else:
         media_json = json.dumps(media_items)
 
-    await state.update_data(
-        media_file_id=media_json,
-        message=caption,
-    )
-    await state.set_state(TimedMailingState.waiting_for_date)
-    await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
-
+        await state.update_data(
+            media_file_id=media_json,
+            message=caption,
+        )
+        await state.set_state(TimedMailingState.waiting_for_date)
+        await msg.answer("Введите дату рассылки в формате ДД.ММ.ГГГГ:")
 
 @router.message(TimedMailingState.waiting_for_date)
 async def timed_get_date(msg: Message, state: FSMContext):
-    print(msg.text)
     try:
         import pytz
         moscow_tz = pytz.timezone("Europe/Moscow")
