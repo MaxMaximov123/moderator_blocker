@@ -55,12 +55,18 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
 
 
 @router.message(StateFilter(UnlockState.waiting_for_manual_user))
-async def process_manual_user_input(msg: Message, state: FSMContext):
+async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
     text = msg.text.strip()
     sender_id = msg.from_user.id
 
     if text.startswith("@"):
-        await state.update_data(target_username=text)
+        try:
+            chat = await bot.get_chat(text)
+            user_id = chat.id
+            await state.update_data(target_user_id=user_id)
+        except Exception:
+            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз.")
+            return
     else:
         try:
             user_id = int(text)
