@@ -203,3 +203,11 @@ async def grant_permissions(bot: Bot, group_id: int, user_id: int):
         )
     except Exception as e:
         print(f"[Ошибка выдачи доступа]: {e}")
+
+
+@router.message(F.forward_sender_name)
+async def handle_hidden_forwarded_message(msg: Message, state: FSMContext):
+    sender_id = msg.from_user.id
+    await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
+    await state.set_state(UnlockState.waiting_for_manual_user)
+    await state.update_data(admin_id=sender_id)
