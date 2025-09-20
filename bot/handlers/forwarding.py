@@ -112,8 +112,10 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
             UnblockedUserLimit.user_id == target_user_id,
             UnblockedUserLimit.group_id == group_id
         )
+        
         result = await session.execute(stmt)
         limit = result.scalar_one_or_none()
+        print(limit)
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
     await cb.message.edit_text(f"Пользователю сейчас доступно {remaining} сообщений.\nСколько вы хотите ему добавить?")
