@@ -25,10 +25,12 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
 
     if msg.forward_from:
         forwarded_user = msg.forward_from
+        forwarded_user_id = forwarded_user.id
     elif msg.contact:
         print(msg.contact)
         if msg.contact.user_id:
             forwarded_user = msg.contact
+            forwarded_user_id = forwarded_user.user_id
         else:
             await msg.answer(f"⚠️ У контакта нет user_id, доступен только номер: {msg.contact.phone_number}")
             return
@@ -37,8 +39,6 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
         return
 
     print(forwarded_user)
-
-    forwarded_user_id = forwarded_user.id
     print(forwarded_user_id)
 
     await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
