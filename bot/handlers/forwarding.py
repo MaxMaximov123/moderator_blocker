@@ -62,18 +62,19 @@ async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
     if text.startswith("@"):
         try:
             chat = await bot.get_chat(text)
+            print(f"[Найден пользователь по username]: {chat.id} ({chat.username})", chat)
             user_id = chat.id
             await state.update_data(target_user_id=user_id)
         except Exception as e:
-            print(f"[Ошибка получения чата по username]: {e}")
-            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз или введите user_id.")
+            print(f"[Ошибка поиска пользователя по username]: {e}")
+            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз.")
             return
     else:
         try:
             user_id = int(text)
             await state.update_data(target_user_id=user_id)
         except ValueError as e:
-            print(f"[Ошибка конвертации user_id]: {e}")
+            print(f"[Ошибка преобразования user_id]: {e}")
             await msg.answer("Введите корректный @username или user_id пользователя.")
             return
 
@@ -114,10 +115,13 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
             UnblockedUserLimit.user_id == target_user_id,
             UnblockedUserLimit.group_id == group_id
         )
-        
         result = await session.execute(stmt)
         limit = result.scalar_one_or_none()
-        print(limit.max_messages, limit.used_messages)
+        if limit and limit.max_messages is None:
+            await cb.message.edit_text("У пользователя безлимит на сообщения.\nЧерез сколько минут удалять сообщения пользователя? (0 = не удалять)")
+            await state.update_data(group_id=group_id, target_user_id=target_user_id)
+            await state.set_state(UnlockState.waiting_for_delete_delay)
+            return
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
     await cb.message.edit_text(f"Пользователю сейчас доступно {remaining} сообщений.\nСколько вы хотите ему добавить?")
