@@ -11,23 +11,33 @@ router = Router()
 
 
 class UnlockState(StatesGroup):
-    waiting_for_manual_user = State()
     waiting_for_group_selection = State()
     waiting_for_limit = State()
     waiting_for_delete_delay = State()
 
 
-@router.message(F.forward_from)
+# При пересланном сообщении или контакте
+@router.message(F.forward_from | F.contact)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
 
-    if msg.forward_from is None:
-        await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
-        await state.set_state(UnlockState.waiting_for_manual_user)
-        await state.update_data(admin_id=sender_id)
+    if msg.forward_from:
+        forwarded_user = msg.forward_from
+    elif msg.contact:
+        print(msg.contact)
+        if msg.contact.user_id:
+            forwarded_user = msg.contact
+        else:
+            await msg.answer(f"⚠️ У контакта нет user_id, доступен только номер: {msg.contact.phone_number}")
+            return
+    else:
+        await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.")
         return
 
-    forwarded_user_id = msg.forward_from.id
+    print(forwarded_user)
+
+    forwarded_user_id = forwarded_user.id
+    print(forwarded_user_id)
 
     await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
 
@@ -53,57 +63,6 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
         await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
         await state.set_state(UnlockState.waiting_for_group_selection)
 
-
-@router.message(StateFilter(UnlockState.waiting_for_manual_user))
-async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
-    text = msg.text.strip()
-    sender_id = msg.from_user.id
-
-    if text.startswith("@"):
-        try:
-            chat = await bot.get_chat(text)
-            print(f"[Найден пользователь по username]: {chat.id} ({chat.username})", chat)
-            user_id = chat.id
-            await state.update_data(target_user_id=user_id)
-        except Exception as e:
-            print(f"[Ошибка поиска пользователя по username]: {e}")
-            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз.")
-            return
-    else:
-        try:
-            user_id = int(text)
-            await state.update_data(target_user_id=user_id)
-        except ValueError as e:
-            print(f"[Ошибка преобразования user_id]: {e}")
-            await msg.answer("Введите корректный @username или user_id пользователя.")
-            return
-
-    data = await state.get_data()
-    admin_id = data.get("admin_id", sender_id)
-
-    async with AsyncSession() as session:
-        admin = await session.get(Admin, admin_id)
-        if not admin:
-            await msg.answer("⛔️ Вы не админ.")
-            return
-
-        stmt = select(Group).where(Group.admin_username == admin.username)
-        result = await session.execute(stmt)
-        groups = result.scalars().all()
-
-        if not groups:
-            await msg.answer("У вас нет групп.")
-            return
-
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=group.title, callback_data=f"unlock_{group.id}")]
-            for group in groups
-        ])
-        await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
-        await state.set_state(UnlockState.waiting_for_group_selection)
-
-
 @router.callback_query(StateFilter(UnlockState.waiting_for_group_selection), F.data.startswith("unlock_"))
 async def process_group_select(cb: CallbackQuery, state: FSMContext):
     group_id = int(cb.data.split("_")[1])
@@ -117,11 +76,6 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
         )
         result = await session.execute(stmt)
         limit = result.scalar_one_or_none()
-        if limit and limit.max_messages is None:
-            await cb.message.edit_text("У пользователя безлимит на сообщения.")
-            
-            await state.clear()
-            return
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
     await cb.message.edit_text(f"Пользователю сейчас доступно {remaining} сообщений.\nСколько вы хотите ему добавить?")
@@ -155,16 +109,8 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
 
     data = await state.get_data()
     group_id = data["group_id"]
-    target_user_id = data.get("target_user_id")
-    target_username = data.get("target_username")
+    target_user_id = data["target_user_id"]
     max_messages = data["max_messages"]
-
-    # If target_user_id is not known but target_username is, we might want to resolve username to user_id here.
-    # But since the original logic does not include that, we proceed only if user_id is known.
-    if target_user_id is None:
-        await msg.answer("Не удалось определить user_id пользователя для разблокировки.")
-        await state.clear()
-        return
 
     async with AsyncSession() as session:
         stmt = select(UnblockedUserLimit).where(
@@ -174,7 +120,7 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
         result = await session.execute(stmt)
         existing_limit = result.scalar_one_or_none()
 
-        if existing_limit and existing_limit.max_messages is not None:
+        if existing_limit:
             remaining = existing_limit.max_messages - existing_limit.used_messages
             existing_limit.max_messages += max_messages
             existing_limit.delete_after_minutes = delay or None
@@ -217,11 +163,3 @@ async def grant_permissions(bot: Bot, group_id: int, user_id: int):
         )
     except Exception as e:
         print(f"[Ошибка выдачи доступа]: {e}")
-
-
-@router.message(F.forward_sender_name)
-async def handle_hidden_forwarded_message(msg: Message, state: FSMContext):
-    sender_id = msg.from_user.id
-    await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
-    await state.set_state(UnlockState.waiting_for_manual_user)
-    await state.update_data(admin_id=sender_id)
