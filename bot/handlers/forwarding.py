@@ -121,6 +121,7 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
             await cb.message.edit_text("У пользователя безлимит на сообщения.\nЧерез сколько минут удалять сообщения пользователя? (0 = не удалять)")
             await state.update_data(group_id=group_id, target_user_id=target_user_id)
             await state.set_state(UnlockState.waiting_for_delete_delay)
+            await state.update_data(max_messages=None)
             return
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
