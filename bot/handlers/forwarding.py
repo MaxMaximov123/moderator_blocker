@@ -64,14 +64,16 @@ async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
             chat = await bot.get_chat(text)
             user_id = chat.id
             await state.update_data(target_user_id=user_id)
-        except Exception:
-            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз.")
+        except Exception as e:
+            print(f"[Ошибка получения чата по username]: {e}")
+            await msg.answer("Не удалось найти пользователя по указанному username. Попробуйте ещё раз или введите user_id.")
             return
     else:
         try:
             user_id = int(text)
             await state.update_data(target_user_id=user_id)
-        except ValueError:
+        except ValueError as e:
+            print(f"[Ошибка конвертации user_id]: {e}")
             await msg.answer("Введите корректный @username или user_id пользователя.")
             return
 
@@ -115,7 +117,7 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
         
         result = await session.execute(stmt)
         limit = result.scalar_one_or_none()
-        print(limit)
+        print(limit.max_messages, limit.used_messages)
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
     await cb.message.edit_text(f"Пользователю сейчас доступно {remaining} сообщений.\nСколько вы хотите ему добавить?")
