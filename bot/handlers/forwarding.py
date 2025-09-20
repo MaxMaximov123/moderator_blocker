@@ -19,6 +19,7 @@ class UnlockState(StatesGroup):
 # При пересланном сообщении или контакте
 @router.message(F.forward_from | F.contact)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
+    print('Forwarded message or contact received', msg)
     sender_id = msg.from_user.id
 
     if msg.forward_from:
