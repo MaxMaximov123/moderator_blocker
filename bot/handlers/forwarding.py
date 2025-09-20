@@ -118,10 +118,9 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
         result = await session.execute(stmt)
         limit = result.scalar_one_or_none()
         if limit and limit.max_messages is None:
-            await cb.message.edit_text("У пользователя безлимит на сообщения.\nЧерез сколько минут удалять сообщения пользователя? (0 = не удалять)")
-            await state.update_data(group_id=group_id, target_user_id=target_user_id)
-            await state.set_state(UnlockState.waiting_for_delete_delay)
-            await state.update_data(max_messages=None)
+            await cb.message.edit_text("У пользователя безлимит на сообщения.")
+            
+            await state.clear()
             return
         remaining = limit.max_messages - limit.used_messages if limit else 0
 
@@ -175,7 +174,7 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
         result = await session.execute(stmt)
         existing_limit = result.scalar_one_or_none()
 
-        if existing_limit:
+        if existing_limit and existing_limit.max_messages is not None:
             remaining = existing_limit.max_messages - existing_limit.used_messages
             existing_limit.max_messages += max_messages
             existing_limit.delete_after_minutes = delay or None
