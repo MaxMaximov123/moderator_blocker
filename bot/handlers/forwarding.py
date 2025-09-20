@@ -16,16 +16,13 @@ class UnlockState(StatesGroup):
     waiting_for_delete_delay = State()
 
 
-# При пересланном сообщении или контакте
-# @router.message(F.forward_from | F.contact)
 @router.message(F.contact)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
+    
+    print(msg.contact)
 
-    if msg.forward_from:
-        forwarded_user = msg.forward_from
-        forwarded_user_id = forwarded_user.id
-    elif msg.contact:
+    if msg.contact:
         print(msg.contact)
         if msg.contact.user_id:
             forwarded_user = msg.contact
