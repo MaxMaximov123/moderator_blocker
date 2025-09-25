@@ -17,32 +17,67 @@ class UnlockState(StatesGroup):
 
 
 @router.message(F.contact)
-async def handle_forwarded_message(msg: Message, state: FSMContext):
-    sender_id = msg.from_user.id
-    
-    print(msg.contact)
-
-    if msg.contact:
-        print(msg.contact)
-        if msg.contact.user_id:
-            forwarded_user = msg.contact
-            forwarded_user_id = forwarded_user.user_id
-        else:
-            await msg.answer(f"⚠️ У контакта нет user_id, доступен только номер: {msg.contact.phone_number}")
-            return
-    else:
-        await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.")
+async def handle_user_contact(msg: Message, state: FSMContext):
+    contact = msg.contact
+    if not contact.user_id:
+        await msg.answer("⚠️ У контакта нет user_id. Поделитесь именно своим контактом через Telegram.")
         return
 
-    print(forwarded_user)
-    print(forwarded_user_id)
+    await state.update_data(request_user_id=contact.user_id, request_phone=contact.phone_number)
 
-    await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
+    # Достаём всех админов
+    async with AsyncSession() as session:
+        result = await session.execute(select(Admin))
+        admins = result.scalars().all()
+
+    if not admins:
+        await msg.answer("❌ Нет доступных админов.")
+        return
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"👤 {admin.username}", callback_data=f"req_admin_{admin.id}")]
+        for admin in admins
+    ])
+    await msg.answer("Кому из админов отправить запрос?", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("req_admin_"))
+async def process_admin_choice(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    admin_id = int(cb.data.split("_")[-1])
+    data = await state.get_data()
+    user_id = data.get("request_user_id")
+    phone = data.get("request_phone")
+
+    # Сообщаем админу
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Принять", callback_data=f"approve_{user_id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{user_id}")
+        ]
+    ])
+    await bot.send_message(
+        chat_id=admin_id,
+        text=f"Запрос на доступ от пользователя {user_id}\n📱 Телефон: {phone}",
+        reply_markup=kb
+    )
+    await cb.message.edit_text("Запрос отправлен админу ✅")
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("approve_"))
+async def process_admin_approve(cb: CallbackQuery, state: FSMContext):
+    target_user_id = int(cb.data.split("_")[-1])
+    admin_id = cb.from_user.id
+
+    # Сохраняем данные в состоянии
+    await state.update_data(admin_id=admin_id, target_user_id=target_user_id)
 
     async with AsyncSession() as session:
-        admin = await session.get(Admin, sender_id)
+        admin = await session.get(Admin, admin_id)
         if not admin:
-            await msg.answer("⛔️ Вы не админ.")
+            await cb.message.answer("⛔️ Вы не админ.")
             return
 
         stmt = select(Group).where(Group.admin_username == admin.username)
@@ -50,7 +85,7 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
         groups = result.scalars().all()
 
         if not groups:
-            await msg.answer("У вас нет групп.")
+            await cb.message.answer("У вас нет групп.")
             return
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -58,9 +93,23 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
             [InlineKeyboardButton(text=group.title, callback_data=f"unlock_{group.id}")]
             for group in groups
         ])
-        await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
+
+        await cb.message.answer(
+            f"✅ Запрос на {target_user_id} одобрен.\nТеперь выберите группу для разблокировки:",
+            reply_markup=kb
+        )
         await state.set_state(UnlockState.waiting_for_group_selection)
 
+
+@router.callback_query(F.data.startswith("reject_"))
+async def process_admin_reject(cb: CallbackQuery, bot: Bot):
+    target_user_id = int(cb.data.split("_")[-1])
+    await cb.message.edit_text("❌ Запрос отклонён.")
+    try:
+        await bot.send_message(chat_id=target_user_id, text="⛔️ Ваш запрос был отклонён.")
+    except Exception:
+        pass
+    
 @router.callback_query(StateFilter(UnlockState.waiting_for_group_selection), F.data.startswith("unlock_"))
 async def process_group_select(cb: CallbackQuery, state: FSMContext):
     group_id = int(cb.data.split("_")[1])

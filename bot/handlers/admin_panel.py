@@ -58,7 +58,15 @@ async def start(msg: Message):
         admin = await session.get(Admin, msg.from_user.id)
 
         if not admin:
-            await msg.answer("У вас нет прав для управления ботом.")
+            reply_kb = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="📱 Поделиться номером телефона", request_contact=True)]],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await msg.answer(
+                "У вас нет прав для управления ботом.\n\nЧтобы получить доступ, поделитесь своим номером телефона:",
+                reply_markup=reply_kb
+            )
             return
 
         reply_kb = ReplyKeyboardMarkup(
