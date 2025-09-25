@@ -57,7 +57,7 @@ async def start(msg: Message):
     async with AsyncSession() as session:
         admin = await session.get(Admin, msg.from_user.id)
 
-        if not admin or True:
+        if not admin:
             reply_kb = ReplyKeyboardMarkup(
                 keyboard=[[KeyboardButton(text="📱 Поделиться номером телефона", request_contact=True)]],
                 resize_keyboard=True,
