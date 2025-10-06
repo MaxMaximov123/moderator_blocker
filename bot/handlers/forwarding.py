@@ -11,73 +11,30 @@ router = Router()
 
 
 class UnlockState(StatesGroup):
+    waiting_for_manual_user = State()
     waiting_for_group_selection = State()
     waiting_for_limit = State()
     waiting_for_delete_delay = State()
 
 
-@router.message(F.contact)
-async def handle_user_contact(msg: Message, state: FSMContext):
-    contact = msg.contact
-    if not contact.user_id:
-        await msg.answer("⚠️ У контакта нет user_id. Поделитесь именно своим контактом через Telegram.")
+@router.message(F.forward_from)
+async def handle_forwarded_message(msg: Message, state: FSMContext):
+    sender_id = msg.from_user.id
+
+    if msg.forward_from is None:
+        await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
+        await state.set_state(UnlockState.waiting_for_manual_user)
+        await state.update_data(admin_id=sender_id)
         return
 
-    await state.update_data(request_user_id=contact.user_id, request_phone=contact.phone_number)
+    forwarded_user_id = msg.forward_from.id
 
-    # Достаём всех админов
-    async with AsyncSession() as session:
-        result = await session.execute(select(Admin))
-        admins = result.scalars().all()
-
-    if not admins:
-        await msg.answer("❌ Нет доступных админов.")
-        return
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"👤 {admin.username}", callback_data=f"req_admin_{admin.id}")]
-        for admin in admins
-    ])
-    await msg.answer("Кому из админов отправить запрос?", reply_markup=kb)
-
-
-@router.callback_query(F.data.startswith("req_admin_"))
-async def process_admin_choice(cb: CallbackQuery, state: FSMContext, bot: Bot):
-    admin_id = int(cb.data.split("_")[-1])
-    data = await state.get_data()
-    user_id = data.get("request_user_id")
-    phone = data.get("request_phone")
-
-    # Сообщаем админу
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Принять", callback_data=f"approve_{user_id}"),
-            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{user_id}")
-        ]
-    ])
-    await bot.send_message(
-        chat_id=admin_id,
-        text=f"Запрос на доступ от пользователя {user_id}\n📱 Телефон: {phone}",
-        reply_markup=kb
-    )
-    await cb.message.edit_text("Запрос отправлен админу ✅")
-    await state.clear()
-
-
-@router.callback_query(F.data.startswith("approve_"))
-async def process_admin_approve(cb: CallbackQuery, state: FSMContext):
-    target_user_id = int(cb.data.split("_")[-1])
-    admin_id = cb.from_user.id
-
-    # Сохраняем данные в состоянии
-    await state.update_data(admin_id=admin_id, target_user_id=target_user_id)
+    await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
 
     async with AsyncSession() as session:
-        admin = await session.get(Admin, admin_id)
+        admin = await session.get(Admin, sender_id)
         if not admin:
-            await cb.message.answer("⛔️ Вы не админ.")
+            await msg.answer("⛔️ Вы не админ.")
             return
 
         stmt = select(Group).where(Group.admin_username == admin.username)
@@ -85,7 +42,7 @@ async def process_admin_approve(cb: CallbackQuery, state: FSMContext):
         groups = result.scalars().all()
 
         if not groups:
-            await cb.message.answer("У вас нет групп.")
+            await msg.answer("У вас нет групп.")
             return
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -93,23 +50,63 @@ async def process_admin_approve(cb: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=group.title, callback_data=f"unlock_{group.id}")]
             for group in groups
         ])
-
-        await cb.message.answer(
-            f"✅ Запрос на {target_user_id} одобрен.\nТеперь выберите группу для разблокировки:",
-            reply_markup=kb
-        )
+        await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
         await state.set_state(UnlockState.waiting_for_group_selection)
 
 
-@router.callback_query(F.data.startswith("reject_"))
-async def process_admin_reject(cb: CallbackQuery, bot: Bot):
-    target_user_id = int(cb.data.split("_")[-1])
-    await cb.message.edit_text("❌ Запрос отклонён.")
-    try:
-        await bot.send_message(chat_id=target_user_id, text="⛔️ Ваш запрос был отклонён.")
-    except Exception:
-        pass
-    
+@router.message(StateFilter(UnlockState.waiting_for_manual_user))
+async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
+    text = msg.text.strip()
+    sender_id = msg.from_user.id
+
+    if text.startswith("@"):
+        async with AsyncSession() as session:
+            stmt = select(UnblockedUserLimit).where(UnblockedUserLimit.username == text.lstrip("@"))
+            result = await session.execute(stmt)
+            user_limit = result.scalar_one_or_none()
+
+            if user_limit:
+                user_id = user_limit.user_id
+                await state.update_data(target_user_id=user_id)
+                print(f"[Найден пользователь по username]: {user_id} ({text})")
+            else:
+                await msg.answer("❌ Пользователь с таким username не найден в базе данных. Попробуйте ещё раз.")
+                return
+    else:
+        try:
+            user_id = int(text)
+            await state.update_data(target_user_id=user_id)
+        except ValueError as e:
+            print(f"[Ошибка преобразования user_id]: {e}")
+            await msg.answer("Введите корректный @username или user_id пользователя.")
+            return
+
+    data = await state.get_data()
+    admin_id = data.get("admin_id", sender_id)
+
+    async with AsyncSession() as session:
+        admin = await session.get(Admin, admin_id)
+        if not admin:
+            await msg.answer("⛔️ Вы не админ.")
+            return
+
+        stmt = select(Group).where(Group.admin_username == admin.username)
+        result = await session.execute(stmt)
+        groups = result.scalars().all()
+
+        if not groups:
+            await msg.answer("У вас нет групп.")
+            return
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=group.title, callback_data=f"unlock_{group.id}")]
+            for group in groups
+        ])
+        await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
+        await state.set_state(UnlockState.waiting_for_group_selection)
+
+
 @router.callback_query(StateFilter(UnlockState.waiting_for_group_selection), F.data.startswith("unlock_"))
 async def process_group_select(cb: CallbackQuery, state: FSMContext):
     group_id = int(cb.data.split("_")[1])
@@ -125,6 +122,7 @@ async def process_group_select(cb: CallbackQuery, state: FSMContext):
         limit = result.scalar_one_or_none()
         if limit and limit.max_messages is None:
             await cb.message.edit_text("У пользователя безлимит на сообщения.")
+            
             await state.clear()
             return
         remaining = limit.max_messages - limit.used_messages if limit else 0
@@ -160,8 +158,16 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
 
     data = await state.get_data()
     group_id = data["group_id"]
-    target_user_id = data["target_user_id"]
+    target_user_id = data.get("target_user_id")
+    target_username = data.get("target_username")
     max_messages = data["max_messages"]
+
+    # If target_user_id is not known but target_username is, we might want to resolve username to user_id here.
+    # But since the original logic does not include that, we proceed only if user_id is known.
+    if target_user_id is None:
+        await msg.answer("Не удалось определить user_id пользователя для разблокировки.")
+        await state.clear()
+        return
 
     async with AsyncSession() as session:
         stmt = select(UnblockedUserLimit).where(
@@ -171,7 +177,7 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
         result = await session.execute(stmt)
         existing_limit = result.scalar_one_or_none()
 
-        if existing_limit:
+        if existing_limit and existing_limit.max_messages is not None:
             remaining = existing_limit.max_messages - existing_limit.used_messages
             existing_limit.max_messages += max_messages
             existing_limit.delete_after_minutes = delay or None
@@ -214,3 +220,11 @@ async def grant_permissions(bot: Bot, group_id: int, user_id: int):
         )
     except Exception as e:
         print(f"[Ошибка выдачи доступа]: {e}")
+
+
+@router.message(F.forward_sender_name)
+async def handle_hidden_forwarded_message(msg: Message, state: FSMContext):
+    sender_id = msg.from_user.id
+    await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
+    await state.set_state(UnlockState.waiting_for_manual_user)
+    await state.update_data(admin_id=sender_id)

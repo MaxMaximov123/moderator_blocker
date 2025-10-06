@@ -46,7 +46,8 @@ async def on_user_join(event: ChatMemberUpdated, bot: Bot):
                 group_id=group_id,
                 user_id=user_id,
                 max_messages=base_limit,
-                used_messages=0
+                used_messages=0,
+                username=user.username
             ))
 
             used_messages = 0

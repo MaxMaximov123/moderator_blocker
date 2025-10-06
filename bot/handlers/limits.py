@@ -88,9 +88,8 @@ async def limit_checker(msg: Message, bot: Bot):
             await session.execute(stmt)
             await session.commit()
 
-        # Планируем автоудаление (если включено)
         if record.delete_after_minutes:
-            from bot.scheduler import scheduler  # импортируй при необходимости
+            from bot.scheduler import scheduler
 
             run_at = datetime.datetime.now() + datetime.timedelta(minutes=record.delete_after_minutes)
             scheduler.add_job(
