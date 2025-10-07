@@ -48,7 +48,8 @@ async def limit_checker(msg: Message, bot: Bot):
                 group_id=group_id,
                 user_id=user_id,
                 max_messages=base_limit,
-                used_messages=1
+                used_messages=1,
+                username=msg.from_user.username
             )
             session.add(record)
             await session.commit()
