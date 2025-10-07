@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, BigInteger, Integer, Text, ForeignKey,
-    Enum, Boolean, DateTime, Interval
+    Enum, Boolean, DateTime, Interval, String
 )
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import declarative_base
@@ -79,3 +79,12 @@ class ScheduledPost(Base, AsyncAttrs):
     unpin_after_minutes = Column(Integer, nullable=True)
     delete_type = Column(Text, default="none")  # none / immediately / after / after_unpin
     delete_after_minutes = Column(Integer, nullable=True)
+
+
+class ScheduledTask(Base):
+    __tablename__ = "scheduled_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(String, nullable=False)
+    message_id = Column(String, nullable=False)
+    run_at = Column(DateTime, nullable=False)

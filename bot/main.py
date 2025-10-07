@@ -12,6 +12,8 @@ from bot.scheduler import start_scheduler
 from aiogram import Bot, Dispatcher
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from bot.scheduler import restore_scheduled_tasks
+
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +59,7 @@ async def on_startup():
 
     # 4. Планировщик
     await start_scheduler(bot)
+    await restore_scheduled_tasks(bot)
 
 
 async def main():

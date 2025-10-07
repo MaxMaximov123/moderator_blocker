@@ -93,6 +93,18 @@ async def limit_checker(msg: Message, bot: Bot):
             from bot.scheduler import scheduler
 
             run_at = datetime.datetime.now() + datetime.timedelta(minutes=record.delete_after_minutes)
+
+            # Сохраняем задачу в БД
+            async with AsyncSession() as session:
+                task = ScheduledTask(
+                    chat_id=msg.chat.id,
+                    message_id=msg.message_id,
+                    run_at=run_at
+                )
+                session.add(task)
+                await session.commit()
+
+            # Добавляем задачу в планировщик
             scheduler.add_job(
                 bot.delete_message,
                 trigger=DateTrigger(run_date=run_at),

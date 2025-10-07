@@ -203,3 +203,29 @@ async def add_post_to_schedule(bot: Bot, post: ScheduledPost):
                 id=f"datetime_{post.id}",
                 replace_existing=True
             )
+
+
+async def restore_scheduled_tasks(bot: Bot):
+    from bot.scheduler import scheduler
+    from db.models import ScheduledTask
+    import datetime
+
+    async with AsyncSession() as session:
+        stmt = select(ScheduledTask)
+        result = await session.execute(stmt)
+        tasks = result.scalars().all()
+
+        for task in tasks:
+            if task.run_at > datetime.datetime.now():
+                # Восстанавливаем задачу в планировщике
+                scheduler.add_job(
+                    bot.delete_message,
+                    trigger=DateTrigger(run_date=task.run_at),
+                    kwargs={"chat_id": task.chat_id, "message_id": task.message_id},
+                    id=f"autodel_{task.chat_id}_{task.message_id}",
+                    replace_existing=True
+                )
+            else:
+                # Если время задачи уже прошло, удаляем её из БД
+                await session.delete(task)
+        await session.commit()
