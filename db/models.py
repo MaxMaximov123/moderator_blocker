@@ -85,6 +85,6 @@ class ScheduledTask(Base):
     __tablename__ = "scheduled_tasks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(String, nullable=False)
-    message_id = Column(String, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    message_id = Column(BigInteger, nullable=False)
     run_at = Column(DateTime, nullable=False)
