@@ -2,7 +2,7 @@ from aiogram import Router, Bot, F
 from aiogram.types import Message
 from sqlalchemy import select, update, UniqueConstraint
 from db.session import AsyncSession
-from db.models import UnblockedUserLimit, Group
+from db.models import UnblockedUserLimit, Group, ScheduledTask
 import asyncio
 from apscheduler.triggers.date import DateTrigger
 import datetime
