@@ -48,6 +48,7 @@ class UnblockedUserLimit(Base, AsyncAttrs):
     max_messages = Column(Integer)  # 0 = без ограничений
     used_messages = Column(Integer, default=0)
     delete_after_minutes = Column(Integer, nullable=True)
+    username = Column(Text, nullable=True)
 
 
 class PostType(str, enum.Enum):
