@@ -79,7 +79,7 @@ async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
         async with AsyncSession() as session:
             stmt = select(UnblockedUserLimit).where(UnblockedUserLimit.username == text.lstrip("@"))
             result = await session.execute(stmt)
-            user_limit = result.scalar_one_or_none()
+            user_limit = result.scalars().first()
 
             if user_limit:
                 user_id = user_limit.user_id

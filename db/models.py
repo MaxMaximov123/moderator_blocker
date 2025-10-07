@@ -43,7 +43,7 @@ class UnblockedUserLimit(Base, AsyncAttrs):
     __tablename__ = "unblocked_limits"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(BigInteger)
+    user_id = Column(BigInteger, unique=True)  # Уникальное поле
     group_id = Column(BigInteger, ForeignKey("groups.id"))
     max_messages = Column(Integer)  # 0 = без ограничений
     used_messages = Column(Integer, default=0)
