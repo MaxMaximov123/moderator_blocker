@@ -17,20 +17,36 @@ class UnlockState(StatesGroup):
     waiting_for_delete_delay = State()
 
 
-@router.message(F.forward_from)
+@router.message(F.forward_from | F.contact)
 async def handle_forwarded_message(msg: Message, state: FSMContext):
     sender_id = msg.from_user.id
 
-    if msg.forward_from is None:
+    # Если это объект контакта
+    if msg.contact:
+        contact = msg.contact
+        if not contact.user_id:
+            await msg.answer("⚠️ У контакта нет user_id. Пожалуйста, отправьте корректный контакт.")
+            return
+
+        forwarded_user_id = contact.user_id
+        await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
+        await msg.answer(f"✅ Пользователь с user_id {forwarded_user_id} получен из контакта.")
+    # Если это пересланное сообщение
+    elif msg.forward_from:
+        forwarded_user_id = msg.forward_from.id
+        await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
+        await msg.answer(f"✅ Пользователь с user_id {forwarded_user_id} получен из пересланного сообщения.")
+    # Если пользователь скрыт
+    elif msg.forward_sender_name:
         await msg.answer("⚠️ Невозможно определить пользователя, он скрыт.\nВведите @username или user_id пользователя:")
         await state.set_state(UnlockState.waiting_for_manual_user)
         await state.update_data(admin_id=sender_id)
         return
+    else:
+        await msg.answer("⚠️ Невозможно определить пользователя. Пожалуйста, отправьте корректный контакт или пересланное сообщение.")
+        return
 
-    forwarded_user_id = msg.forward_from.id
-
-    await state.update_data(admin_id=sender_id, target_user_id=forwarded_user_id)
-
+    # Проверяем, является ли отправитель администратором
     async with AsyncSession() as session:
         admin = await session.get(Admin, sender_id)
         if not admin:
@@ -45,6 +61,7 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
             await msg.answer("У вас нет групп.")
             return
 
+        # Отправляем список групп для выбора
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=group.title, callback_data=f"unlock_{group.id}")]
@@ -52,7 +69,6 @@ async def handle_forwarded_message(msg: Message, state: FSMContext):
         ])
         await msg.answer("Выберите, где разблокировать пользователя:", reply_markup=kb)
         await state.set_state(UnlockState.waiting_for_group_selection)
-
 
 @router.message(StateFilter(UnlockState.waiting_for_manual_user))
 async def process_manual_user_input(msg: Message, state: FSMContext, bot: Bot):
