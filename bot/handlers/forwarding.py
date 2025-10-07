@@ -194,7 +194,8 @@ async def process_delete_delay(msg: Message, state: FSMContext, bot: Bot):
                 group_id=group_id,
                 max_messages=max_messages,
                 used_messages=0,
-                delete_after_minutes=delay or None
+                delete_after_minutes=delay or None,
+                username=target_username
             )
             session.add(limit)
             await session.commit()
