@@ -24,8 +24,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 RAW_ADMIN_IDS = os.getenv("ADMIN_IDS", "").split()
 
 dp = Dispatcher(storage=MemoryStorage())
-bot_session = AiohttpSession(timeout=aiohttp.ClientTimeout(total=30))
-bot = Bot(token=BOT_TOKEN, session=bot_session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
 async def on_startup():
