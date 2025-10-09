@@ -24,7 +24,7 @@ RAW_ADMIN_IDS = os.getenv("ADMIN_IDS", "").split()
 
 dp = Dispatcher(storage=MemoryStorage())
 
-bot = Bot(token=BOT_TOKEN, request_timeout=30, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
 async def on_startup():
