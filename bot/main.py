@@ -13,6 +13,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from bot.scheduler import restore_scheduled_tasks
+from aiogram.client.session.aiohttp import AiohttpSession
+import aiohttp
 
 
 load_dotenv()
@@ -23,11 +25,8 @@ RAW_ADMIN_IDS = os.getenv("ADMIN_IDS", "").split()
 
 dp = Dispatcher(storage=MemoryStorage())
 
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    # intents=["chat_member", "message", "my_chat_member"]
-)
+session = AiohttpSession(timeout=aiohttp.ClientTimeout(total=30))
+bot = Bot(token=BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
 async def on_startup():
