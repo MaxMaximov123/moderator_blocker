@@ -7,6 +7,7 @@ from db.models import MessageSchedule, Group, ScheduledPost
 from sqlalchemy import select
 from aiogram import Bot
 import datetime
+import asyncio
 
 scheduler = AsyncIOScheduler()
 
@@ -24,6 +25,19 @@ from sqlalchemy import delete, update
 
 import json
 from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
+
+
+
+async def safe_unpin(bot, chat_id: int, message_id: int):
+    for attempt in range(3):
+        try:
+            await bot.unpin_chat_message(chat_id=chat_id, message_id=message_id)
+            break
+        except Exception as e:
+            if attempt < 2:
+                await asyncio.sleep(2)
+            else:
+                print(f"❌ Не удалось открепить сообщение {message_id} в {chat_id} после 3 попыток")
 
 
 async def send_scheduled_message(bot: Bot, post_id: int):
@@ -113,9 +127,9 @@ async def send_scheduled_message(bot: Bot, post_id: int):
         # Unpin
         if post.unpin_after_minutes:
             scheduler.add_job(
-                bot.unpin_chat_message,
+                safe_unpin,
                 DateTrigger(run_date=datetime.datetime.now() + datetime.timedelta(minutes=post.unpin_after_minutes)),
-                kwargs={"chat_id": post.group_id, "message_id": message_id}
+                kwargs={"bot": bot, "chat_id": post.group_id, "message_id": message_id}
             )
 
         # Delete
