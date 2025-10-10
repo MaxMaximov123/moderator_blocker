@@ -99,7 +99,13 @@ async def on_user_join(event: ChatMemberUpdated, bot: Bot):
     )
 
     await asyncio.sleep(30)
-    await msg.delete()
+    for _ in range(3):
+        try:
+            await msg.delete()
+            break
+        except:
+            print("Failed to delete message, retrying...")
+            await asyncio.sleep(2)
 
 @router.my_chat_member()
 async def on_bot_added(event: ChatMemberUpdated, bot: Bot):
